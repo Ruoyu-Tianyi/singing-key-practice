@@ -195,6 +195,87 @@ afterAll(() => {
 });
 
 describe("practice room integration", () => {
+  it.each([
+    ["tuner", "Find your frequency.", "实时音准仪"],
+    ["match", "Feel the resonance.", "标准音模唱"],
+    ["songs", "Follow your melody.", "曲谱练习"],
+  ])(
+    "keeps %s navigation and its workspace in sync",
+    async (mode, title, breadcrumb) => {
+      await click(`[data-view="${mode}"]`);
+      expect(text("#page-title")).toBe(title);
+      expect(text("#breadcrumb")).toBe(breadcrumb);
+      expect(location.hash).toBe(`#${mode}`);
+      const current = document.querySelectorAll(
+        '[data-view][aria-current="page"]',
+      );
+      expect(current).toHaveLength(1);
+      expect(current[0]).toBe(element(`[data-view="${mode}"]`));
+      expect(current[0].classList.contains("active")).toBe(true);
+      expect(element("#songs-card").hidden).toBe(mode !== "songs");
+      expect(element("#keyboard-card").hidden).toBe(mode === "songs");
+      expect(element(".brand").getAttribute("aria-label")).toBe("Auralis 首页");
+    },
+  );
+
+  it.each([
+    ["import", "把想唱的歌，带进练习室"],
+    ["editor", "写一段自己的旋律"],
+    ["settings", "让练习更适合你"],
+    ["help", "从第一个音开始"],
+  ])(
+    "opens the %s dialog with a readable accessible name and close control",
+    async (action, title) => {
+      await click(`[data-action="${action}"]`);
+      const dialog = element<HTMLDialogElement>(`#${action}-dialog`);
+      expect(dialog.open).toBe(true);
+      const headingId = dialog.getAttribute("aria-labelledby");
+      expect(headingId).toBeTruthy();
+      const heading = document.getElementById(headingId!);
+      expect(dialog.contains(heading)).toBe(true);
+      expect(heading?.textContent).toBe(title);
+      await click(`#${action}-dialog [data-close][aria-label="关闭"]`);
+      expect(dialog.open).toBe(false);
+    },
+  );
+
+  it("respects reduced motion when switching practice modes", async () => {
+    const heading = element(".page-heading");
+    const originalAnimate = Object.getOwnPropertyDescriptor(heading, "animate");
+    const originalMatchMedia = Object.getOwnPropertyDescriptor(
+      window,
+      "matchMedia",
+    );
+    const animate = vi.fn();
+    const matchMedia = vi.fn().mockReturnValue({ matches: true });
+    Object.defineProperty(heading, "animate", {
+      configurable: true,
+      value: animate,
+    });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: matchMedia,
+    });
+    try {
+      await click('[data-view="match"]');
+      expect(text("#page-title")).toBe("Feel the resonance.");
+      expect(matchMedia).toHaveBeenCalledWith(
+        "(prefers-reduced-motion: reduce)",
+      );
+      expect(animate).not.toHaveBeenCalled();
+      matchMedia.mockReturnValue({ matches: false });
+      await click('[data-view="songs"]');
+      expect(animate).toHaveBeenCalledOnce();
+    } finally {
+      if (originalAnimate)
+        Object.defineProperty(heading, "animate", originalAnimate);
+      else Reflect.deleteProperty(heading, "animate");
+      if (originalMatchMedia)
+        Object.defineProperty(window, "matchMedia", originalMatchMedia);
+      else Reflect.deleteProperty(window, "matchMedia");
+    }
+  });
+
   it("draws both ends of a recent phrase spanning more than two octaves", async () => {
     await click("#mic-button");
     const onPitch = audio.startMicrophone.mock.lastCall![0] as (
@@ -429,5 +510,58 @@ describe("practice room integration", () => {
     expect(values[0]).toBe("100%");
     expect(values[2]).toBe("50 ms");
     expect(text("#practice-button")).toContain("开始练习");
+  });
+
+  it("keeps unchanged live readout nodes stable while updating changed pitches", async () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(20_000);
+    try {
+      await click("#mic-button");
+      const onPitch = audio.startMicrophone.mock.lastCall![0] as (
+        frame: PitchFrame,
+      ) => void;
+      onPitch({
+        frequency: 440 * 2 ** ((60 - 69) / 12),
+        midi: 60,
+        cents: 0,
+        clarity: 1,
+        rms: 0.05,
+        time: 20,
+      });
+      scheduledDraw(20_110);
+      const stableNodes = [
+        "#live-note",
+        "#live-hz",
+        "#live-cents",
+        "#tuning-status",
+        "#input-tip",
+        "#today-time",
+      ].map((selector) => ({
+        node: element(selector),
+        children: [...element(selector).childNodes],
+      }));
+      scheduledDraw(20_320);
+      for (const { node, children } of stableNodes) {
+        expect(node.childNodes).toHaveLength(children.length);
+        children.forEach((child, index) =>
+          expect(node.childNodes[index]).toBe(child),
+        );
+      }
+      expect(text("#live-note")).toBe("C4");
+      expect(text("#live-cents")).toBe("0 音分");
+      clock.mockReturnValue(20_400);
+      onPitch({
+        frequency: 440 * 2 ** ((61.12 - 69) / 12),
+        midi: 61.12,
+        cents: 12,
+        clarity: 1,
+        rms: 0.05,
+        time: 20.4,
+      });
+      scheduledDraw(20_530);
+      expect(text("#live-note")).toBe("C#4");
+      expect(text("#live-cents")).toBe("+12 音分");
+    } finally {
+      clock.mockRestore();
+    }
   });
 });

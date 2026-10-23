@@ -149,26 +149,26 @@ let editDraft: ScoreNote[] = [],
 const app = $("app");
 app.innerHTML = `
 <aside class="sidebar">
-  <a class="brand" href="#tuner" aria-label="声准 首页"><span class="brand-mark">${i("audio-lines")}</span><span>声准<small>SHENGZHUN</small></span></a>
-  <div class="nav-label">我的练习室</div>
+  <a class="brand" href="#tuner" aria-label="Auralis 首页"><span class="brand-mark"><img src="./logo-mark.svg" width="48" height="48" alt="" /></span><span>auralis<small>FIND YOUR FREQUENCY</small></span></a>
+  <div class="nav-label">YOUR PRACTICE SPACE</div>
   <nav aria-label="练习模式">
-    <button class="nav-item active" data-view="tuner">${i("audio-lines")}<span>实时音准仪</span><span class="nav-dot"></span></button>
-    <button class="nav-item" data-view="match">${i("piano")}<span>标准音模唱</span></button>
-    <button class="nav-item" data-view="songs">${i("book-open")}<span>曲谱练习</span><span class="badge-small">NEW</span></button>
+    <button class="nav-item active" data-view="tuner" aria-label="实时音准仪">${i("audio-lines")}<span>实时音准仪<small>Pitch monitor</small></span><span class="nav-index" aria-hidden="true">01</span></button>
+    <button class="nav-item" data-view="match" aria-label="标准音模唱">${i("piano")}<span>标准音模唱<small>Note matching</small></span><span class="nav-index" aria-hidden="true">02</span></button>
+    <button class="nav-item" data-view="songs" aria-label="曲谱练习">${i("book-open")}<span>曲谱练习<small>Melody practice</small></span><span class="nav-index" aria-hidden="true">03</span></button>
   </nav>
-  <div class="sidebar-note"><span class="tiny-spark">✳</span><strong>每一个音，都更靠近一点。</strong><p>听见、唱出、看见。<br>让练习成为一件轻松的小事。</p><div class="mini-wave"><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b></div></div>
-  <div class="sidebar-bottom"><button data-action="settings">${i("settings-2")}<span>练习设置</span></button><button data-action="help">${i("circle-help")}<span>使用指南</span>${i("arrow-up-right")}</button><div class="open-source">开源、免费，为热爱歌唱的你 <span>♡</span></div></div>
+  <div class="sidebar-note"><div class="sidebar-orbit" aria-hidden="true"><span></span><span></span><span></span><b>♪</b></div><strong>Every voice<br>has its own <em>orbit.</em></strong><p>听见自己，靠近每一个音。</p></div>
+  <div class="sidebar-bottom"><button data-action="settings">${i("settings-2")}<span>练习设置</span></button><button data-action="help">${i("circle-help")}<span>使用指南</span>${i("arrow-up-right")}</button><div class="open-source"><span></span> ON-DEVICE AUDIO <small>开源 · 本地处理</small></div></div>
 </aside>
 <main>
-  <header class="topbar"><span>练习室 <span class="slash">/</span> <span id="breadcrumb">实时音准仪</span></span><span class="privacy">${i("shield-check")}声音仅在你的设备上处理</span><button class="help-icon" data-action="settings" aria-label="练习设置">${i("settings-2")}</button><button class="help-icon" data-action="help" aria-label="使用指南">${i("circle-help")}</button></header>
+  <header class="topbar"><span><span class="studio-label">STUDIO</span><span class="slash">/</span><span id="breadcrumb">实时音准仪</span></span><span class="privacy">${i("shield-check")}声音只属于你 · 仅在本机分析</span><button class="help-icon" data-action="settings" aria-label="练习设置">${i("settings-2")}</button><button class="help-icon" data-action="help" aria-label="使用指南">${i("circle-help")}</button></header>
   <div class="page">
-    <div class="page-heading"><div><div class="eyebrow">A LITTLE PRACTICE, A LITTLE CLOSER.</div><h1 id="page-title">找到你的每一个音<span>。</span></h1><p id="page-subtitle">让声音被看见，让每一次练习都有方向。</p></div><button class="button secondary import-top" data-action="import">${i("upload")}导入曲谱</button></div>
+    <div class="page-heading"><div><div class="eyebrow"><span></span> A SPACE FOR YOUR VOICE</div><h1 id="page-title">Find your <em>frequency.</em></h1><p id="page-subtitle">让声音被看见，让每一次练习都有方向。</p></div><div class="hero-actions"><span class="hero-caption">LISTEN. SING. FEEL.</span><button class="button secondary import-top" data-action="import">${i("upload")}导入你的曲谱${i("arrow-up-right")}</button></div><div class="hero-orbit" aria-hidden="true"><span></span><span></span><b>✧</b></div></div>
     <div class="workspace">
       <div class="main-column">
         <section class="card tuner-card" aria-label="实时音高监测">
-          <div class="card-header"><h2>${i("audio-lines")}<span id="monitor-title">实时音准</span></h2><div class="chart-tools"><span class="status" id="mic-status"><span></span>麦克风未开启</span><button class="chart-expand-button" id="chart-expand-button" data-action="expand-chart" aria-pressed="false">${i("maximize-2")}<span>放大曲线</span></button></div></div>
-          <div class="pitch-readout"><div class="current-pitch"><span id="live-note">—</span><span class="pitch-hz" id="live-hz">等待你的声音</span></div><div class="tuning-readout"><span id="tuning-status">准备好，就唱出一个音</span><strong id="live-cents">— <small>音分</small></strong></div></div>
-          <div class="pitch-chart"><canvas id="pitch-canvas" role="img" aria-label="最近十秒的演唱音高曲线，纵轴为音名，横轴为时间，音域自动适应整段声音"></canvas><div class="chart-empty" id="chart-empty"><span class="empty-mic">${i("mic")}</span><strong>在这里，听见自己的进步</strong><span>开启麦克风，轻轻唱一个「啊」</span></div><div class="chart-legend"><span class="legend-target"></span><span id="chart-reference-label">标准音</span><span class="legend-live"></span>你的声音<span class="chart-range" id="chart-range">音域自适应</span><span class="chart-window">最近 10 秒</span></div></div>
+          <div class="card-header"><h2>${i("audio-lines")}<span id="monitor-title">实时音准</span><small>PITCH OBSERVATORY</small></h2><div class="chart-tools"><span class="status" id="mic-status"><span></span>麦克风未开启</span><button class="chart-expand-button" id="chart-expand-button" data-action="expand-chart" aria-pressed="false">${i("maximize-2")}<span>放大曲线</span></button></div></div>
+          <div class="pitch-readout"><div class="current-pitch"><span class="readout-label">YOUR NOTE</span><span id="live-note">—</span><span class="pitch-hz" id="live-hz">等待你的声音</span></div><div class="tuning-readout"><span class="readout-label">INTONATION</span><strong id="live-cents">— <small>音分</small></strong><span id="tuning-status">准备好，就唱出一个音</span></div></div>
+          <div class="pitch-chart"><canvas id="pitch-canvas" role="img" aria-label="最近十秒的演唱音高曲线，纵轴为音名，横轴为时间，音域自动适应整段声音"></canvas><div class="chart-empty" id="chart-empty"><span class="empty-mic">${i("mic")}<b></b><b></b></span><strong>Your voice, in a new light.</strong><span>开启麦克风，让第一个音点亮这里。</span></div><div class="chart-legend"><span class="legend-live"></span>你的声音<span class="legend-target"></span><span id="chart-reference-label">标准音</span><span class="chart-range" id="chart-range">音域自适应</span><span class="chart-window">10 SEC WINDOW</span></div></div>
           <div class="tuner-bottom"><span>${i("headphones")}建议佩戴耳机，识别更准确</span><button class="button primary" id="mic-button" data-action="mic">${i("mic")}开启麦克风</button></div>
         </section>
         <section class="card keyboard-card" id="keyboard-card"><div class="card-header"><h2>${i("piano")}听一个标准音</h2><div class="octave-switch"><button data-action="octave-down" aria-label="降低键盘八度">${i("minus")}</button><span id="octave-label">C3 – B4</span><button data-action="octave-up" aria-label="升高键盘八度">${i("plus")}</button></div></div><div class="keyboard-wrap"><div id="keyboard" class="keyboard" aria-label="标准音键盘"></div></div><div class="keyboard-footer"><span>点击琴键听音，再试着唱出来</span><span>电脑快捷键 <kbd>A</kbd> – <kbd>K</kbd></span></div></section>
@@ -181,19 +181,21 @@ app.innerHTML = `
         <section class="practice-guide"><div class="guide-icon">${i("headphones")}</div><h3>给自己 5 分钟</h3><p>从一个舒服的音开始，<br>听一听，唱一唱，再靠近一点。</p><div class="guide-steps"><span><b>1</b>播放标准音，仔细聆听</span><span><b>2</b>用「啊」或「呜」轻声模唱</span><span><b>3</b>观察曲线，慢慢调整音高</span></div><div class="practice-stat"><span>今日已练习</span><strong id="today-time">0 <small>分钟</small></strong></div></section>
       </aside>
     </div>
-    <footer><span>声准 <span class="footer-dot">·</span> 每一次发声，都是新的开始。</span><span>为你的声音，留一点时间 <span class="footer-heart">♡</span></span></footer>
+    <footer><a href="https://github.com/Ruoyu-Tianyi/singing-key-practice" target="_blank" rel="noopener noreferrer">auralis <span class="footer-dot">/</span> OPEN SOURCE VOCAL STUDIO ${i("arrow-up-right")}</a><span>Make a little space for your voice. <span class="footer-heart">✧</span></span></footer>
   </div>
 </main>
 <div id="toast" class="toast" role="status" hidden></div>
-<dialog id="import-dialog"><div class="dialog-head"><div><span class="eyebrow">YOUR MUSIC, YOUR PACE</span><h2>把想唱的歌，带进练习室</h2></div><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><p>MusicXML / MIDI 可直接导入。图片与 PDF 的识别结果需要校对。</p><label class="field">曲谱类型<select id="import-kind"><option value="digital">MusicXML / MIDI / JSON</option><option value="jianpu">图片 / PDF 简谱（本地文字识别）</option><option value="staff">图片 / PDF 五线谱（Audiveris 服务）</option></select></label><label class="field" id="omr-field" hidden>五线谱识别服务地址<input id="omr-endpoint" type="url" placeholder="http://127.0.0.1:8765/api/recognize"><small>需自行运行附带的本地服务；曲谱只发送到此地址。</small></label><label class="upload-zone" for="score-file">${i("upload")}<strong>点击选择你的曲谱</strong><span>MusicXML、MXL、MIDI、JSON、PNG、JPG、PDF · 最大 20 MB</span><input id="score-file" type="file" accept=".xml,.musicxml,.mxl,.mid,.midi,.json,.png,.jpg,.jpeg,.webp,.pdf" hidden></label><p id="import-progress" class="import-progress" role="status"></p><div id="ocr-review" hidden><div class="notice">简谱识别无法可靠保留上下标、八度和时值。请对照原谱修正，再保存。</div><label class="field">识别文字<textarea id="ocr-text" rows="5"></textarea></label><button class="button primary" data-action="save-ocr">校对完成，导入曲谱</button></div><div class="dialog-foot">只有你主动选择五线谱服务时，曲谱才会离开此设备。首次简谱识别需联网下载识别模型。</div></dialog>
-<dialog id="editor-dialog"><div class="dialog-head"><h2>写一段自己的旋律</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><label class="field">曲谱名称<input id="editor-title" value="我的旋律" maxlength="100"></label><label class="field">简谱<textarea id="editor-text" rows="5" spellcheck="false">1 1 5 5 | 6 6 5- | 4 4 3 3 | 2 2 1-</textarea></label><p class="notation-help">以 C 大调为基准：1–7 为音符，0 为休止；<code>1'</code> 高八度，<code>1,</code> 低八度；<code>1-</code> 两拍，<code>1_</code> 半拍，<code>1__</code> 四分之一拍；可用 #、b 升降音。请用空格分隔音符。</p><button class="button primary" data-action="save-editor">${i("check")}保存到我的曲谱</button></dialog>
-<dialog id="settings-dialog"><div class="dialog-head"><h2>让练习更适合你</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><label class="field">标准音 A4（Hz）<input id="tuning" type="number" min="430" max="450" step="1" value="440"><small>默认 440 Hz。调节后，识别与参考音会一起更新。</small></label><label class="field">跟唱延迟校正（毫秒）<input id="latency" type="number" min="0" max="500" step="10" value="100"><small>用于补偿设备输入延迟，只影响曲谱练习的对齐与评分。</small></label><div class="notice">手机和平板请通过 HTTPS 访问。局域网 HTTP 地址通常不能使用麦克风；本机 localhost 可以。</div><button class="button primary" data-action="save-settings">保存设置</button></dialog>
-<dialog id="help-dialog"><div class="dialog-head"><h2>从第一个音开始</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><div class="help-content"><h3>实时音准仪</h3><p>开启麦克风并允许浏览器录音。音名和曲线显示当前音高，音分表示距离最近标准音的偏差。绿色表示误差在 ±25 音分以内；音量太低、噪声或多人合唱会降低准确度。</p><h3>标准音模唱</h3><p>点击琴键或播放目标音，再用自然的声音模唱。「标准音模唱」模式会把偏差对准你选的目标音。钢琴与手风琴采用本地合成音色。</p><h3>曲谱练习</h3><p>选一首曲谱、调整速度与片段。先听示范，再开始练习。4 拍预备后跟着音符唱，默认不播放旋律，避免扬声器串音。音准命中率按有效发声采样计算，覆盖率表示目标发声时长中检测到有效声音的比例；节奏参考首次发声及换音时间，连续同音无法可靠区分。</p><h3>图片和 PDF</h3><p>简谱使用文字 OCR，必须校对八度和时值。五线谱需要附带的 Audiveris 服务，识别后也需要核对；复杂多声部只取选定主旋律，不支持完整乐队总谱。更准确的方式是从制谱软件导出 MusicXML。</p><h3>数据与隐私</h3><p>麦克风声音不上传、不录制。自定义曲谱和今日练习时长保存在当前浏览器中；没有账号与跨设备同步。电脑、平板、手机均可通过同一 HTTPS 网址访问。</p></div></dialog>`;
+<dialog id="import-dialog" aria-labelledby="import-dialog-title"><div class="dialog-head"><div><span class="eyebrow">YOUR MUSIC, YOUR PACE</span><h2 id="import-dialog-title">把想唱的歌，带进练习室</h2></div><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><p>MusicXML / MIDI 可直接导入。图片与 PDF 的识别结果需要校对。</p><label class="field">曲谱类型<select id="import-kind"><option value="digital">MusicXML / MIDI / JSON</option><option value="jianpu">图片 / PDF 简谱（本地文字识别）</option><option value="staff">图片 / PDF 五线谱（Audiveris 服务）</option></select></label><label class="field" id="omr-field" hidden>五线谱识别服务地址<input id="omr-endpoint" type="url" placeholder="http://127.0.0.1:8765/api/recognize"><small>需自行运行附带的本地服务；曲谱只发送到此地址。</small></label><label class="upload-zone" for="score-file">${i("upload")}<strong>点击选择你的曲谱</strong><span>MusicXML、MXL、MIDI、JSON、PNG、JPG、PDF · 最大 20 MB</span><input id="score-file" type="file" accept=".xml,.musicxml,.mxl,.mid,.midi,.json,.png,.jpg,.jpeg,.webp,.pdf" hidden></label><p id="import-progress" class="import-progress" role="status"></p><div id="ocr-review" hidden><div class="notice">简谱识别无法可靠保留上下标、八度和时值。请对照原谱修正，再保存。</div><label class="field">识别文字<textarea id="ocr-text" rows="5"></textarea></label><button class="button primary" data-action="save-ocr">校对完成，导入曲谱</button></div><div class="dialog-foot">只有你主动选择五线谱服务时，曲谱才会离开此设备。首次简谱识别需联网下载识别模型。</div></dialog>
+<dialog id="editor-dialog" aria-labelledby="editor-dialog-title"><div class="dialog-head"><h2 id="editor-dialog-title">写一段自己的旋律</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><label class="field">曲谱名称<input id="editor-title" value="我的旋律" maxlength="100"></label><label class="field">简谱<textarea id="editor-text" rows="5" spellcheck="false">1 1 5 5 | 6 6 5- | 4 4 3 3 | 2 2 1-</textarea></label><p class="notation-help">以 C 大调为基准：1–7 为音符，0 为休止；<code>1'</code> 高八度，<code>1,</code> 低八度；<code>1-</code> 两拍，<code>1_</code> 半拍，<code>1__</code> 四分之一拍；可用 #、b 升降音。请用空格分隔音符。</p><button class="button primary" data-action="save-editor">${i("check")}保存到我的曲谱</button></dialog>
+<dialog id="settings-dialog" aria-labelledby="settings-dialog-title"><div class="dialog-head"><h2 id="settings-dialog-title">让练习更适合你</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><label class="field">标准音 A4（Hz）<input id="tuning" type="number" min="430" max="450" step="1" value="440"><small>默认 440 Hz。调节后，识别与参考音会一起更新。</small></label><label class="field">跟唱延迟校正（毫秒）<input id="latency" type="number" min="0" max="500" step="10" value="100"><small>用于补偿设备输入延迟，只影响曲谱练习的对齐与评分。</small></label><div class="notice">手机和平板请通过 HTTPS 访问。局域网 HTTP 地址通常不能使用麦克风；本机 localhost 可以。</div><button class="button primary" data-action="save-settings">保存设置</button></dialog>
+<dialog id="help-dialog" aria-labelledby="help-dialog-title"><div class="dialog-head"><h2 id="help-dialog-title">从第一个音开始</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><div class="help-content"><h3>实时音准仪</h3><p>开启麦克风并允许浏览器录音。音名和曲线显示当前音高，音分表示距离最近标准音的偏差。绿色表示误差在 ±25 音分以内；音量太低、噪声或多人合唱会降低准确度。</p><h3>标准音模唱</h3><p>点击琴键或播放目标音，再用自然的声音模唱。「标准音模唱」模式会把偏差对准你选的目标音。钢琴与手风琴采用本地合成音色。</p><h3>曲谱练习</h3><p>选一首曲谱、调整速度与片段。先听示范，再开始练习。4 拍预备后跟着音符唱，默认不播放旋律，避免扬声器串音。音准命中率按有效发声采样计算，覆盖率表示目标发声时长中检测到有效声音的比例；节奏参考首次发声及换音时间，连续同音无法可靠区分。</p><h3>图片和 PDF</h3><p>简谱使用文字 OCR，必须校对八度和时值。五线谱需要附带的 Audiveris 服务，识别后也需要核对；复杂多声部只取选定主旋律，不支持完整乐队总谱。更准确的方式是从制谱软件导出 MusicXML。</p><h3>数据与隐私</h3><p>麦克风声音不上传、不录制。自定义曲谱和今日练习时长保存在当前浏览器中；没有账号与跨设备同步。电脑、平板、手机均可通过同一 HTTPS 网址访问。</p></div></dialog>`;
 
 const chartHost = document.querySelector<HTMLElement>(".workspace")!;
 const tunerCard = document.querySelector<HTMLElement>(".tuner-card")!;
 const mainColumn = document.querySelector<HTMLElement>(".main-column")!;
 chartHost.prepend(tunerCard);
+const inputCard = document.querySelector<HTMLElement>(".input-card")!;
+mainColumn.insertBefore(inputCard, document.querySelector(".bottom-tip"));
 const chartDialog = document.createElement("dialog");
 chartDialog.id = "chart-focus-dialog";
 chartDialog.className = "chart-focus-dialog";
@@ -229,6 +231,14 @@ chartDialog.addEventListener("close", () => {
 function refreshIcons() {
   createIcons({ icons: iconSet, attrs: { "stroke-width": 1.7 } });
 }
+function setText(id: string, value: string) {
+  const node = $(id);
+  if (node.textContent !== value) node.textContent = value;
+}
+function setMarkup(id: string, value: string) {
+  const node = $(id);
+  if (node.innerHTML !== value) node.innerHTML = value;
+}
 function toast(message: string) {
   $("toast").textContent = message;
   $("toast").hidden = false;
@@ -258,8 +268,10 @@ function addTime(seconds: number) {
   updateStats();
 }
 function updateStats() {
-  $("today-time").innerHTML =
-    `${stats.date === localDate() ? Math.floor(stats.seconds / 60) : 0} <small>分钟</small>`;
+  setMarkup(
+    "today-time",
+    `${stats.date === localDate() ? Math.floor(stats.seconds / 60) : 0} <small>分钟</small>`,
+  );
 }
 function updateTarget() {
   const label = noteLabel(target);
@@ -318,22 +330,22 @@ function setView(next: View) {
   const titles = {
     tuner: [
       "实时音准仪",
-      "找到你的每一个音",
+      "Find your <em>frequency.</em>",
       "让声音被看见，让每一次练习都有方向。",
     ],
     match: [
       "标准音模唱",
-      "先听见，再唱准",
+      "Feel the <em>resonance.</em>",
       "从一个标准音开始，建立耳朵与声音的默契。",
     ],
     songs: [
       "曲谱练习",
-      "把喜欢的旋律，慢慢唱准",
+      "Follow your <em>melody.</em>",
       "放慢一点，练好一小段，再把它们连成一首歌。",
     ],
   };
   $("breadcrumb").textContent = titles[view][0];
-  $("page-title").innerHTML = titles[view][1] + "<span>。</span>";
+  $("page-title").innerHTML = titles[view][1];
   $("page-subtitle").textContent = titles[view][2];
   $("monitor-title").textContent =
     view === "songs"
@@ -343,6 +355,19 @@ function setView(next: View) {
         : "实时音准";
   $("keyboard-card").hidden = view === "songs";
   $("songs-card").hidden = view !== "songs";
+  const heading = document.querySelector<HTMLElement>(".page-heading");
+  if (
+    heading?.animate &&
+    !window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
+  ) {
+    heading.animate(
+      [
+        { opacity: 0.35, transform: "translateY(6px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      { duration: 220, easing: "ease-out" },
+    );
+  }
   if (location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
 }
 async function toggleMic() {
@@ -397,6 +422,7 @@ function updateMic() {
   $("mic-status").innerHTML =
     `<span></span>${micBusy ? "正在申请权限" : mic ? "正在聆听" : "麦克风未开启"}`;
   $("mic-status").classList.toggle("connected", mic);
+  tunerCard.classList.toggle("is-listening", mic);
   $("input-state").textContent = mic ? "已连接" : "未连接";
   $("chart-empty").hidden = mic || playing;
   refreshIcons();
@@ -418,12 +444,10 @@ function selectedNotes(): ScoreNote[] {
   if (cachedScore !== score || cachedSelectionKey !== key) {
     cachedScore = score;
     cachedSelectionKey = key;
-    cachedNotes = score.notes
-      .slice(start, end)
-      .map((n) => ({
-        ...n,
-        midi: n.midi === null ? null : n.midi + transpose,
-      }));
+    cachedNotes = score.notes.slice(start, end).map((n) => ({
+      ...n,
+      midi: n.midi === null ? null : n.midi + transpose,
+    }));
     chartReferencePitches = cachedNotes.flatMap((n) =>
       n.midi === null ? [] : [n.midi],
     );
@@ -1072,7 +1096,8 @@ editButton.textContent = "校对音符";
 $("songs-card").querySelector(".card-header")!.append(editButton);
 const editDialog = document.createElement("dialog");
 editDialog.id = "score-edit-dialog";
-editDialog.innerHTML = `<div class="dialog-head"><h2>逐音校对曲谱</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><label class="field">曲谱名称<input id="edit-title" maxlength="120"></label><p>对照原谱修改音高和拍数。四分音符为 1 拍，八分音符为 0.5 拍；休止输入「休止」。</p><div class="edit-row edit-row-heading"><span>序号</span><span>音高（如 C4、F#4）</span><span>拍数</span></div><div id="edit-rows"></div><div class="edit-pagination"><button class="button secondary" data-action="edit-prev">上一页</button><span id="edit-page-label"></span><button class="button secondary" data-action="edit-next">下一页</button></div><button class="button primary" data-action="save-score-edit">${i("check")}保存校对后的曲谱</button>`;
+editDialog.setAttribute("aria-labelledby", "score-edit-dialog-title");
+editDialog.innerHTML = `<div class="dialog-head"><h2 id="score-edit-dialog-title">逐音校对曲谱</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><label class="field">曲谱名称<input id="edit-title" maxlength="120"></label><p>对照原谱修改音高和拍数。四分音符为 1 拍，八分音符为 0.5 拍；休止输入「休止」。</p><div class="edit-row edit-row-heading"><span>序号</span><span>音高（如 C4、F#4）</span><span>拍数</span></div><div id="edit-rows"></div><div class="edit-pagination"><button class="button secondary" data-action="edit-prev">上一页</button><span id="edit-page-label"></span><button class="button secondary" data-action="edit-next">下一页</button></div><button class="button primary" data-action="save-score-edit">${i("check")}保存校对后的曲谱</button>`;
 document.body.append(editDialog);
 let lastUI = 0;
 function draw(now: number) {
@@ -1110,28 +1135,29 @@ function draw(now: number) {
   const plotHeight = Math.max(1, bottom - top);
   const y = (m: number) => bottom - ((m - low) / (high - low)) * plotHeight;
   const labelStep = chooseNoteLabelStep({ low, high }, plotHeight);
-  ctx.font = "11px system-ui";
+  ctx.font = "11px 'Space Grotesk', system-ui";
   ctx.lineWidth = 1;
   for (let m = low; m <= high; m++) {
     const yy = y(m);
-    ctx.strokeStyle = m % 12 === 0 ? "#d4d0e4" : "#eeedf5";
+    ctx.strokeStyle =
+      m % 12 === 0 ? "rgba(159,184,209,.16)" : "rgba(159,184,209,.065)";
     ctx.beginPath();
     ctx.moveTo(left, yy);
     ctx.lineTo(right, yy);
     ctx.stroke();
     if (((m % labelStep) + labelStep) % labelStep === 0) {
-      ctx.fillStyle = m % 12 === 0 ? "#66537e" : "#8a7d98";
+      ctx.fillStyle = m % 12 === 0 ? "#bac8de" : "#7c8ca7";
       ctx.fillText(noteLabel(m), 10, yy + 4);
     }
   }
   for (let t = 0; t <= 10; t += 2) {
     const x = left + (t / 10) * (right - left);
-    ctx.strokeStyle = "#f0f1f6";
+    ctx.strokeStyle = "rgba(159,184,209,.075)";
     ctx.beginPath();
     ctx.moveTo(x, top);
     ctx.lineTo(x, bottom);
     ctx.stroke();
-    ctx.fillStyle = "#998da6";
+    ctx.fillStyle = "#8290a9";
     ctx.fillText(
       t === 10 ? "现在" : `−${10 - t}s`,
       x - (t === 10 ? 18 : 7),
@@ -1143,7 +1169,7 @@ function draw(now: number) {
   ctx.rect(left, top, Math.max(0, right - left), plotHeight);
   ctx.clip();
   if (center >= low && center <= high) {
-    ctx.fillStyle = "#8d7de414";
+    ctx.fillStyle = "rgba(167,146,255,.065)";
     ctx.fillRect(
       left,
       y(center + 0.25),
@@ -1151,7 +1177,7 @@ function draw(now: number) {
       y(center - 0.25) - y(center + 0.25),
     );
     ctx.setLineDash([5, 5]);
-    ctx.strokeStyle = "#a695df";
+    ctx.strokeStyle = "rgba(178,161,255,.58)";
     ctx.beginPath();
     ctx.moveTo(left, y(center));
     ctx.lineTo(right, y(center));
@@ -1179,7 +1205,7 @@ function draw(now: number) {
       const x1 = left + ((start - now + 10000) / 10000) * (right - left),
         x2 = left + ((end - now + 10000) / 10000) * (right - left);
       if (n.midi !== null && x2 >= left && x1 <= right) {
-        ctx.fillStyle = "#b9abe84a";
+        ctx.fillStyle = "rgba(167,146,255,.28)";
         ctx.fillRect(
           Math.max(left, x1),
           y(n.midi) - 5,
@@ -1189,7 +1215,7 @@ function draw(now: number) {
       }
     }
   }
-  ctx.strokeStyle = "#7460d4";
+  ctx.strokeStyle = "#6fe6e9";
   ctx.lineWidth = 2.8;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
@@ -1209,29 +1235,36 @@ function draw(now: number) {
   ctx.restore();
   if (now - lastUI > 100) {
     lastUI = now;
-    $("chart-range").textContent =
-      `自适应音域 ${noteLabel(low)} – ${noteLabel(high)}`;
-    $("chart-reference-label").textContent =
-      view === "tuner" ? "最近标准音" : "目标音";
+    setText("chart-range", `自适应音域 ${noteLabel(low)} – ${noteLabel(high)}`);
+    setText(
+      "chart-reference-label",
+      view === "tuner" ? "最近标准音" : "目标音",
+    );
     const valid = mic && frame?.midi !== null && frame?.frequency;
     const note = valid ? noteLabel(frame!.midi!) : "—";
-    $("live-note").textContent = note;
-    $("live-hz").textContent = valid
-      ? `${frame!.frequency!.toFixed(1)} Hz`
-      : mic
-        ? "轻声唱一个音"
-        : "等待你的声音";
+    setText("live-note", note);
+    setText(
+      "live-hz",
+      valid
+        ? `${frame!.frequency!.toFixed(1)} Hz`
+        : mic
+          ? "轻声唱一个音"
+          : "等待你的声音",
+    );
     const cents = valid
       ? view === "tuner"
         ? frame!.cents!
         : (frame!.midi! - center) * 100
       : null;
-    $("live-cents").innerHTML =
+    setMarkup(
+      "live-cents",
       cents === null
         ? "— <small>音分</small>"
-        : `${cents > 0 ? "+" : ""}${Math.round(cents)} <small>音分</small>`;
+        : `${cents > 0 ? "+" : ""}${Math.round(cents)} <small>音分</small>`,
+    );
     const tune = $("tuning-status");
-    tune.textContent =
+    setText(
+      "tuning-status",
       cents === null
         ? mic
           ? "正在聆听你的声音"
@@ -1240,22 +1273,28 @@ function draw(now: number) {
           ? "音很准，保持住"
           : cents < 0
             ? "稍低一点，试着向上"
-            : "稍高一点，试着向下";
+            : "稍高一点，试着向下",
+    );
     tune.classList.toggle("in-tune", cents !== null && Math.abs(cents) <= 25);
     const level = mic && frame ? Math.min(1, frame.rms * 9) : 0;
     $("input-meter")
       .querySelectorAll("span")
       .forEach((s, n) => s.classList.toggle("lit", n < level * 32));
-    $("input-tip").textContent = !mic
-      ? "开启麦克风后，观察声音的输入强度。"
-      : level < 0.025
-        ? "声音较轻，靠近麦克风，自然发声。"
-        : level > 0.9
-          ? "声音较响，稍微离麦克风远一点。"
-          : "输入正常，保持自然、稳定地发声。";
+    setText(
+      "input-tip",
+      !mic
+        ? "开启麦克风后，观察声音的输入强度。"
+        : level < 0.025
+          ? "声音较轻，靠近麦克风，自然发声。"
+          : level > 0.9
+            ? "声音较响，稍微离麦克风远一点。"
+            : "输入正常，保持自然、稳定地发声。",
+    );
     if (mic && monitorStarted)
-      $("today-time").innerHTML =
-        `${Math.floor(((stats.date === localDate() ? stats.seconds : 0) + (now - monitorStarted) / 1000) / 60)} <small>分钟</small>`;
+      setMarkup(
+        "today-time",
+        `${Math.floor(((stats.date === localDate() ? stats.seconds : 0) + (now - monitorStarted) / 1000) / 60)} <small>分钟</small>`,
+      );
   }
   requestAnimationFrame(draw);
 }

@@ -4,14 +4,14 @@
 
 ## 前端直接依赖
 
-| 软件 | 作者/版权主体 | 本项目采用的许可 | 用途与上游原文 |
-| --- | --- | --- | --- |
-| pitchy | Ian Johnson | 0BSD | 实时基频检测。[源码](https://github.com/ianprime0509/pitchy) · [许可原文](https://github.com/ianprime0509/pitchy/blob/main/LICENSE) |
-| Tesseract.js | Tesseract.js contributors | Apache-2.0 | 浏览器文字 OCR。[源码](https://github.com/naptha/tesseract.js) · [许可原文](https://github.com/naptha/tesseract.js/blob/master/LICENSE.md) |
-| PDF.js / pdfjs-dist | Mozilla Foundation and contributors | Apache-2.0 | PDF 渲染与文字提取。[源码](https://github.com/mozilla/pdf.js) · [许可原文](https://github.com/mozilla/pdf.js/blob/master/LICENSE) |
-| @tonejs/midi | Yotam Mann and contributors | MIT | MIDI 解析。[源码](https://github.com/Tonejs/Midi) · [许可原文](https://github.com/Tonejs/Midi/blob/master/LICENSE.md) |
-| JSZip | Stuart Knightley, David Duponchel, Franz Buchinger, António Afonso and contributors | MIT（双许可中的 MIT 选项） | MXL/ZIP 解压。[源码](https://github.com/Stuk/jszip) · [许可原文](https://github.com/Stuk/jszip/blob/main/LICENSE.markdown) |
-| Lucide | Lucide Icons and Contributors；部分图标源于 Cole Bemis 的 Feather 项目 | ISC；上游列明的 Feather 派生图标保留 MIT 声明 | 界面图标。[源码](https://github.com/lucide-icons/lucide) · [ISC 与 Feather MIT 声明](https://github.com/lucide-icons/lucide/blob/main/LICENSE) |
+| 软件                | 作者/版权主体                                                                       | 本项目采用的许可                              | 用途与上游原文                                                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| pitchy              | Ian Johnson                                                                         | 0BSD                                          | 实时基频检测。[源码](https://github.com/ianprime0509/pitchy) · [许可原文](https://github.com/ianprime0509/pitchy/blob/main/LICENSE)            |
+| Tesseract.js        | Tesseract.js contributors                                                           | Apache-2.0                                    | 浏览器文字 OCR。[源码](https://github.com/naptha/tesseract.js) · [许可原文](https://github.com/naptha/tesseract.js/blob/master/LICENSE.md)     |
+| PDF.js / pdfjs-dist | Mozilla Foundation and contributors                                                 | Apache-2.0                                    | PDF 渲染与文字提取。[源码](https://github.com/mozilla/pdf.js) · [许可原文](https://github.com/mozilla/pdf.js/blob/master/LICENSE)              |
+| @tonejs/midi        | Yotam Mann and contributors                                                         | MIT                                           | MIDI 解析。[源码](https://github.com/Tonejs/Midi) · [许可原文](https://github.com/Tonejs/Midi/blob/master/LICENSE.md)                          |
+| JSZip               | Stuart Knightley, David Duponchel, Franz Buchinger, António Afonso and contributors | MIT（双许可中的 MIT 选项）                    | MXL/ZIP 解压。[源码](https://github.com/Stuk/jszip) · [许可原文](https://github.com/Stuk/jszip/blob/main/LICENSE.markdown)                     |
+| Lucide              | Lucide Icons and Contributors；部分图标源于 Cole Bemis 的 Feather 项目              | ISC；上游列明的 Feather 派生图标保留 MIT 声明 | 界面图标。[源码](https://github.com/lucide-icons/lucide) · [ISC 与 Feather MIT 声明](https://github.com/lucide-icons/lucide/blob/main/LICENSE) |
 
 以上依赖未经本项目修改。构建工具、测试工具及传递依赖保留各自 npm 分发包中的许可；维护者发布新的独立二进制包、离线包或前端构建时，应同步包含所分发代码的完整许可及上游 NOTICE。项目的依赖锁文件是版本清单，不替代许可文本。
 
@@ -28,3 +28,7 @@ Tesseract.js 首次识别时可能加载 OCR 引擎和语言数据，这些资�
 ## 音乐与音色
 
 参考音由本项目通过 Web Audio 合成，不使用第三方钢琴/手风琴采样包。内置练习由项目自行编写。用户导入的谱面、MIDI、MusicXML 等文件的版权与使用权由对应权利人决定，软件的开源许可不授予第三方歌曲或曲谱的权利。
+
+## 界面字体
+
+Space Grotesk，Copyright 2020 The Space Grotesk Project Authors，采用 SIL Open Font License 1.1。英文标题、品牌文字和读数使用自行托管的 Latin variable WOFF2（300–700），原始字体数据未经本项目修改。文件取自 [`@fontsource-variable/space-grotesk` 5.3.0](https://www.npmjs.com/package/@fontsource-variable/space-grotesk/v/5.3.0)，字体上游为 [Space Grotesk](https://github.com/floriankarsten/space-grotesk)。完整许可与版权声明随 `public/fonts/OFL-Space-Grotesk.txt` 分发。此字体许可独立于项目的 MIT 许可。

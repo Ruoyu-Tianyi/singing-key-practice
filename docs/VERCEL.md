@@ -1,6 +1,6 @@
-# 在 Vercel 部署声准
+# 在 Vercel 部署 Auralis
 
-声准前端是 Vite 静态网站，可部署到 Vercel，并通过 HTTPS 在电脑、手机和平板访问。麦克风分析、标准音播放、MusicXML/MIDI/JSON 导入、简谱 OCR 和跟唱练习均在浏览器中完成，不需要服务器或 API 密钥。
+Auralis 前端是 Vite 静态网站，可部署到 Vercel，并通过 HTTPS 在电脑、手机和平板访问。麦克风分析、标准音播放、MusicXML/MIDI/JSON 导入、简谱 OCR 和跟唱练习均在浏览器中完成，不需要服务器或 API 密钥。
 
 **生产地址：[https://singing-key-practice.vercel.app/](https://singing-key-practice.vercel.app/)**。已验证无需 Vercel 登录即可访问，首页及许可证页面返回 200，手机宽度下曲线放大、还原正常，A4 参考音显示 440 Hz。
 

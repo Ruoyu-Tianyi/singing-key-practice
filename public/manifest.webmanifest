@@ -1,1 +1,18 @@
-{"name":"声准 · 音准练习室","short_name":"声准","lang":"zh-CN","start_url":"./","scope":"./","display":"standalone","background_color":"#f5f6f9","theme_color":"#6755cf","icons":[{"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}
+{
+  "name": "Auralis — Vocal Practice Studio",
+  "short_name": "Auralis",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b101a",
+  "theme_color": "#0b101a",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

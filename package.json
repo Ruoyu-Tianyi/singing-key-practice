@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "声准 · A private, browser-based singing pitch and rhythm practice studio",
+  "description": "Auralis · An open-source vocal pitch and rhythm practice studio for the browser",
   "license": "MIT",
   "engines": {
     "node": "22.x"

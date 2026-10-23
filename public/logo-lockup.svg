@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 72" fill="none">
+  <title>Auralis — Vocal Practice Studio</title>
+  <defs>
+    <linearGradient id="signal" x1="18.5" y1="52" x2="46.7" y2="20" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6FE6E9"/>
+      <stop offset="0.58" stop-color="#A8F1EE"/>
+      <stop offset="1" stop-color="#9C8DFF"/>
+    </linearGradient>
+    <linearGradient id="orbit" x1="8" y1="46" x2="55.7" y2="25.7" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6FE6E9" stop-opacity="0"/>
+      <stop offset="0.55" stop-color="#6FE6E9" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#9C8DFF" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="32" cy="38" rx="25" ry="10" transform="rotate(-24 32 38)" stroke="url(#orbit)" stroke-width="0.85"/>
+  <path d="M18.5 52 29.57 22.9C30.53 20.37 33.47 20.37 34.43 22.9L45.5 52" stroke="url(#signal)" stroke-width="3.7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22.33 40.83C26.17 37 28.5 37 32 40.83S38.17 44.67 42.67 37.67" stroke="#6FE6E9" stroke-width="2.7" stroke-linecap="round"/>
+  <circle cx="53.17" cy="29.67" r="1.35" fill="#A8F1EE"/>
+  <text x="76" y="43" fill="#EDF3FA" font-family="Avenir Next, Segoe UI, Arial, sans-serif" font-size="34" font-weight="500" letter-spacing="-1.4">auralis</text>
+  <text x="78" y="59" fill="#8C9AAF" font-family="Avenir Next, Segoe UI, Arial, sans-serif" font-size="7.2" font-weight="500" letter-spacing="2.15">VOCAL PRACTICE STUDIO</text>
+</svg>

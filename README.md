@@ -1,14 +1,16 @@
-# 声准 · 音准练习室
+# Auralis · Vocal Practice Studio
 
-一个中文、开源的浏览器唱歌练习工具：听标准音、看自己的音高曲线，再按旋律练习音准与节奏。前端使用 TypeScript、Vite 和 Web Audio；日常练习无需账号或应用服务器。
+一个开源的浏览器人声练习室：听标准音、看自己的音高曲线，再按旋律练习音准与节奏。英文视觉标题搭配中文操作，方便理解音分、曲谱与练习反馈。前端使用 TypeScript、Vite 和 Web Audio；日常练习无需账号或应用服务器。
 
-**在线使用：[打开声准练习室 · Vercel](https://singing-key-practice.vercel.app/)**
+**在线使用：[打开 Auralis · Vercel](https://singing-key-practice.vercel.app/)**
 
 备用入口：[GitHub Pages](https://ruoyu-tianyi.github.io/singing-key-practice/)。两个域名的浏览器本地数据独立，曲谱可通过 JSON 导出、导入迁移。
 
 源码：[Ruoyu-Tianyi/singing-key-practice](https://github.com/Ruoyu-Tianyi/singing-key-practice)。公开仓库，原创代码使用 MIT 许可。
 
-![声准桌面界面](docs/preview-desktop.jpg)
+![Auralis 桌面界面](docs/preview-desktop.jpg)
+
+[查看手机布局](docs/preview-mobile.jpg)。深夜蓝背景搭配冰青、柔紫的音高轨迹，原生 SVG 标志融合字母 A、人声音高曲线和轨道；英文采用自托管的 Space Grotesk 字体。名称与资产说明见 [品牌设计](docs/BRAND.md)。
 
 ## 可以做什么
 
@@ -17,7 +19,7 @@
 - **曲谱练习**：内置《小星星》《欢乐颂》和 C 大调音阶；支持示范、4 拍预备、节拍器、30–220 BPM、选择音符片段、±12 半音移调与循环练习。
 - **导入与编谱**：导入 MusicXML、MXL、MIDI 和本项目 JSON；手动输入简谱；图片/PDF 简谱可在浏览器生成 OCR 文字草稿。所有模板均可逐音校对音高与拍数，五线谱扫描件可选接入 Audiveris 服务。
 - **练习反馈**：显示音准命中率、有效发声覆盖率与换音平均时间偏差。自定义曲谱、练习设置和当天时长保存在当前浏览器，可导出曲谱 JSON。
-- **多端界面**：按桌面、平板和手机屏幕调整布局。麦克风与播放需要浏览器授权及用户点击。
+- **多端界面**：按桌面、平板和手机屏幕调整布局，提供适合触控的操作区域，尊重系统减少动态效果设置。麦克风与播放需要浏览器授权及用户点击。
 
 钢琴、手风琴均为合成音色，没有使用真实乐器录音采样。检测适用于独唱的单旋律；伴奏、多人声音、噪声和扬声器回传会影响结果。建议佩戴耳机，或先听示范再唱。
 
@@ -45,6 +47,8 @@ python -m unittest discover -s server -p "test_*.py"
 ```
 
 当前验证范围和设备实测状态见 [验证记录](docs/VERIFICATION.md)。
+
+本次界面改版保留既有曲谱、设置和练习统计的浏览器存储键；继续使用原域名即可读取原有数据。实时读数仅在数值变化时更新对应页面节点，减少重复改写。
 
 ## 怎样练习
 
