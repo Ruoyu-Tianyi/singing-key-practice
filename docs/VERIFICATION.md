@@ -36,7 +36,7 @@ Python 的两项单元测试没有调用真实 Audiveris；另已实际运行官
 | 真人独唱与扬声器播放 | 待实体设备实测 | 音名/频率/音分随人声变化；钢琴风格与手风琴风格可听，佩戴耳机后跟唱反馈合理。 |
 | 简谱图片/PDF OCR | 浏览器验证通过 | 实际上传 PNG 与 PDF 样本，下载识别模型、生成草稿、修正延长线、导入 7 个音符并逐音校对。原始 OCR 漏掉延长线，不能免人工确认。 |
 | Audiveris 五线谱识别 | 本机已准备便携环境，端到端验证通过 | 官方 cucaracha.png 经本地接口返回 MusicXML，网页显示「29 - LA CUCARACHA」、3/4、68 个音符，可进入校对与练习。官方程序、Java 和 OCR 模型位于忽略的 .tools，不随源码提交。 |
-| HTTPS 静态部署 | 上轮已发布，本轮自动校准待部署 | 上轮最终文档提交 `d11a916` 的 Vercel 为 Ready、GitHub Pages 成功，应用源码与已验收的 `0ddee6b` 相同；本轮自动校准暂不据此宣称已经上线。 |
+| HTTPS 静态部署 | 本轮自动校准已发布并验证 | 源码提交 `1f9da79` 的 Vercel 官方 GitHub 检查为 success，并报告 Deployment has completed；GitHub Pages 成功。生产域名加载新 JS/CSS，首页等 10 项检查资源的内容与本地构建一致，公网 390×844 授权等待和取消流程复验通过；实体麦克风仍未实测。 |
 
 公网版本额外验证：MIDI 文件成功导入为 4 个旋律音符；PNG 简谱 OCR 成功生成可编辑草稿，浏览器未记录错误。本地开发服务额外验证：PDF 简谱识别、修正延长线、逐音编辑与手机设置入口已通过。
 
@@ -51,6 +51,10 @@ Python 的两项单元测试没有调用真实 Audiveris；另已实际运行官
 自动校准的本地布局记录：390×844 初始及取消后预览 y=125.94–381.08、参数区 y=390.08–743.86、保存按钮 y=760.43–804.43。320×568 初始预览 y=87.94–313.08、参数区 y=322.08–477.43、保存按钮 y=488–532，校准按钮 y=243.51–287.51；申请连接时预览延伸到 y=345.87、参数区为 y=354.87–477.43，取消按钮仍在 y=243.51–287.51，取消后操作恢复可用。360×740 下预览 y=125.94–381.08、参数区 y=390.08–639.86、保存按钮 y=656.43–700.43。1440×1000 下弹窗为 650×860px、y=70–930，预览 y=190.74–465.91、参数区 y=477.91–839.86、保存按钮底部 y=900.43。坐标为当次模拟视口记录，不作为所有设备的固定尺寸保证。
 
 收音设置的说明已与实际参数核对：增益仅用于本机数字分析，不改变物理麦克风增益，也不将人声连接到扬声器；音量门限、频率上下限及可信度用于过滤估计。检测更新次数是目标上限，音频处理采样率只读；分析窗口时长为采样数除以采样率，不能视为端到端延迟保证，调整窗口后可能需要重调跟唱延迟。[MDN：sampleRate](https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext/sampleRate)、[requestAnimationFrame](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame)、[时域采样](https://developer.mozilla.org/en-US/docs/Web/API/AnalyserNode/getFloatTimeDomainData)、[fftSize](https://developer.mozilla.org/en-US/docs/Web/API/AnalyserNode/fftSize)、[Pitchy](https://github.com/ianprime0509/pitchy)
+
+本轮自动校准的公网发布已验证：源码提交为 [`1f9da7995a7a4989f6f9e94383814cf7277c7cd3`](https://github.com/Ruoyu-Tianyi/singing-key-practice/commit/1f9da7995a7a4989f6f9e94383814cf7277c7cd3)，[Vercel 官方 GitHub 提交检查](https://api.github.com/repos/Ruoyu-Tianyi/singing-key-practice/commits/1f9da7995a7a4989f6f9e94383814cf7277c7cd3/status) 为 success，描述为 `Deployment has completed`，关联[Vercel 部署](https://vercel.com/ruoyu3/singing-key-practice/QzsmNVg6gsy4zYAbCMx25hKaEVWc)。[生产入口](https://singing-key-practice.vercel.app/) 加载 `index-C74Ny9vl.js` 与 `index-Biti9bqB.css`；首页、这两项资源、应用图标、两项 SVG 标志、网页清单、Space Grotesk 字体、OFL 文本与第三方许可证页共 10 项均匿名返回 HTTP 200，逐项 SHA-256 与本地 `dist/` 完全一致。[GitHub Pages 构建部署](https://github.com/Ruoyu-Tianyi/singing-key-practice/actions/runs/39975347095) 对应同一源码提交，状态 completed、结果 success。
+
+本轮公网浏览器复验：390×844 下自动校准入口与“4 秒环境、6 秒试唱”的说明正常显示。点击“自动校准”进入等待授权，取消按钮可见，增益与保存操作禁用；点击取消后麦克风未开启，原参数 1× / 0.008 保留，增益与保存恢复可用，状态显示校准已取消；关闭重开恢复初始说明。参数区滚动到 `scrollTop=1438.2858` 后，预览仍为 y=125.94–381.08、保存按钮底部仍为 y=804.43，无横向溢出，浏览器警告和错误记录均为空。公网截图已另行留存、不随仓库分发。此轮没有接受实体麦克风授权，未验证实际环境采样、真人试唱或真实信号下的完整校准成功流程。
 
 此前设置内实时预览的公网发布已验证：源码提交为 [`0ddee6b2576f5fc1ed698b4d8f444091e08c6154`](https://github.com/Ruoyu-Tianyi/singing-key-practice/commit/0ddee6b2576f5fc1ed698b4d8f444091e08c6154)，[Vercel 部署](https://vercel.com/ruoyu3/singing-key-practice/BnZ8rPrmxazwY9ZsVCNVTwWo2HsU) 状态为 Ready，GitHub 的 Vercel 提交检查为 success。[生产入口](https://singing-key-practice.vercel.app/) 当时加载 `index-CeF3A2Yc.js` 与 `index-DPK0KttK.css`；首页、这两项资源、应用图标、两项 SVG 标志、网页清单、Space Grotesk 字体、OFL 文本与第三方许可证页共 10 项均匿名返回 HTTP 200，逐项 SHA-256 与当时本地 `dist/` 完全一致。[GitHub Pages 构建部署](https://github.com/Ruoyu-Tianyi/singing-key-practice/actions/runs/39970505714) 对应同一源码提交，结果为 success；其公开首页返回 200 并加载相同的 JS/CSS 文件。后续仅更新验证文档的 `d11a9162857e051a4b1efae0dbf087e6302cb8a3` 也已确认 [Vercel Ready](https://vercel.com/ruoyu3/singing-key-practice/ATqiU6VGSFKc16srx57nPVBoR2US) 与 [GitHub Pages 成功](https://github.com/Ruoyu-Tianyi/singing-key-practice/actions/runs/39970982557)，应用资源未改变。
 
