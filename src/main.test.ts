@@ -19,6 +19,23 @@ const audio = vi.hoisted(() => ({
   close: vi.fn(),
 }));
 
+let scheduledDraw: FrameRequestCallback;
+const canvasContext = {
+  setTransform: vi.fn(),
+  clearRect: vi.fn(),
+  beginPath: vi.fn(),
+  moveTo: vi.fn(),
+  lineTo: vi.fn(),
+  stroke: vi.fn(),
+  fillText: vi.fn(),
+  fillRect: vi.fn(),
+  setLineDash: vi.fn(),
+  save: vi.fn(),
+  rect: vi.fn(),
+  clip: vi.fn(),
+  restore: vi.fn(),
+};
+
 vi.mock("./audio", async (importOriginal) => {
   const original = await importOriginal<typeof import("./audio")>();
   return {
@@ -99,11 +116,28 @@ beforeAll(async () => {
   document.body.innerHTML = '<div id="app"></div>';
   vi.stubGlobal(
     "requestAnimationFrame",
-    vi.fn(() => 1),
+    vi.fn((callback: FrameRequestCallback) => {
+      scheduledDraw = callback;
+      return 1;
+    }),
   );
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
-    {} as CanvasRenderingContext2D,
+    canvasContext as unknown as CanvasRenderingContext2D,
   );
+  vi.spyOn(
+    HTMLCanvasElement.prototype,
+    "getBoundingClientRect",
+  ).mockReturnValue({
+    x: 0,
+    y: 0,
+    top: 0,
+    left: 0,
+    bottom: 400,
+    right: 800,
+    width: 800,
+    height: 400,
+    toJSON: () => ({}),
+  });
   Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
     configurable: true,
     value: function (this: HTMLDialogElement) {
@@ -123,6 +157,9 @@ beforeAll(async () => {
 beforeEach(async () => {
   vi.useFakeTimers();
   pagehide(true);
+  element("#chart-focus-dialog").dispatchEvent(
+    new Event("cancel", { cancelable: true }),
+  );
   document.querySelectorAll("dialog").forEach((dialog) => dialog.close());
   await click('[data-view="tuner"]');
   audio.startMicrophone.mockReset().mockResolvedValue(undefined);
@@ -158,6 +195,92 @@ afterAll(() => {
 });
 
 describe("practice room integration", () => {
+  it("draws both ends of a recent phrase spanning more than two octaves", async () => {
+    await click("#mic-button");
+    const onPitch = audio.startMicrophone.mock.lastCall![0] as (
+      frame: PitchFrame,
+    ) => void;
+    const clock = vi.spyOn(performance, "now");
+    for (const [milliseconds, midi] of [
+      [1000, 36],
+      [2000, 84],
+    ]) {
+      clock.mockReturnValue(milliseconds);
+      onPitch({
+        frequency: 440 * 2 ** ((midi - 69) / 12),
+        midi,
+        cents: 0,
+        clarity: 1,
+        rms: 0.2,
+        time: milliseconds / 1000,
+      });
+    }
+    scheduledDraw(2500);
+    clock.mockRestore();
+    const [firstX, firstY] = canvasContext.moveTo.mock.lastCall! as [
+      number,
+      number,
+    ];
+    const [lastX, lastY] = canvasContext.lineTo.mock.lastCall! as [
+      number,
+      number,
+    ];
+    expect(firstX).toBeCloseTo(53 + 0.85 * (776 - 53));
+    expect(lastX).toBeCloseTo(53 + 0.95 * (776 - 53));
+    expect(firstY).toBeGreaterThan(lastY);
+    expect(firstY).toBeLessThan(366);
+    expect(lastY).toBeGreaterThan(20);
+    expect(text("#chart-range")).toBe("自适应音域 A#1 – D6");
+    for (const call of [
+      ...canvasContext.moveTo.mock.calls,
+      ...canvasContext.lineTo.mock.calls,
+      ...canvasContext.fillRect.mock.calls,
+      ...canvasContext.rect.mock.calls,
+    ]) {
+      expect(call.every(Number.isFinite)).toBe(true);
+    }
+  });
+
+  it("fits the complete selected score before its first note plays", async () => {
+    await saveMelody("跨音域曲线回归", "1,, 1''");
+    scheduledDraw(3000);
+    expect(text("#chart-range")).toBe("自适应音域 A#1 – D6");
+    expect(text("#chart-reference-label")).toBe("目标音");
+    expect(canvasContext.clip).toHaveBeenCalledOnce();
+    expect(canvasContext.save).toHaveBeenCalledOnce();
+    expect(canvasContext.restore).toHaveBeenCalledOnce();
+  });
+
+  it("restores the same chart after the expand button and native Escape cancel event", async () => {
+    const card = element(".tuner-card");
+    const canvas = element("#pitch-canvas");
+    const dialog = element<HTMLDialogElement>("#chart-focus-dialog");
+    await click("#chart-expand-button");
+    expect(dialog.open).toBe(true);
+    expect(card.parentElement).toBe(dialog);
+    expect(element("#chart-expand-button").getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    expect(element("#pitch-canvas")).toBe(canvas);
+    await click("#chart-expand-button");
+    expect(dialog.open).toBe(false);
+    expect(card.parentElement).toBe(element(".workspace"));
+    expect(element("#chart-expand-button").getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    await click("#chart-expand-button");
+    const escape = new Event("cancel", { cancelable: true });
+    dialog.dispatchEvent(escape);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(dialog.open).toBe(false);
+    expect(card.parentElement).toBe(element(".workspace"));
+    expect(element("#pitch-canvas")).toBe(canvas);
+    expect(element("#chart-expand-button").getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    expect(document.activeElement).toBe(element("#chart-expand-button"));
+  });
+
   it("keeps the microphone disconnected when permission resolves after cancellation", async () => {
     const grant = pendingPermission();
     await click("#mic-button");

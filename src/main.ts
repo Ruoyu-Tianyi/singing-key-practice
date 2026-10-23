@@ -28,7 +28,14 @@ import {
   Target,
   Timer,
   Sparkles,
+  Maximize2,
+  Minimize2,
 } from "lucide";
+import {
+  PitchViewport,
+  selectPitchRange,
+  chooseNoteLabelStep,
+} from "./pitch-chart";
 import {
   AudioEngine,
   midiToFrequency,
@@ -72,6 +79,8 @@ const iconSet = {
   Target,
   Timer,
   Sparkles,
+  Maximize2,
+  Minimize2,
 };
 const i = (name: string) => `<i data-lucide="${name}" aria-hidden="true"></i>`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
@@ -85,6 +94,7 @@ const escape = (s: string) =>
       ]!,
   );
 const engine = new AudioEngine();
+const pitchViewport = new PitchViewport();
 type View = "tuner" | "match" | "songs";
 let view: View = "tuner",
   instrument: Instrument = "piano",
@@ -156,9 +166,9 @@ app.innerHTML = `
     <div class="workspace">
       <div class="main-column">
         <section class="card tuner-card" aria-label="实时音高监测">
-          <div class="card-header"><h2>${i("audio-lines")}<span id="monitor-title">实时音准</span></h2><span class="status" id="mic-status"><span></span>麦克风未开启</span></div>
+          <div class="card-header"><h2>${i("audio-lines")}<span id="monitor-title">实时音准</span></h2><div class="chart-tools"><span class="status" id="mic-status"><span></span>麦克风未开启</span><button class="chart-expand-button" id="chart-expand-button" data-action="expand-chart" aria-pressed="false">${i("maximize-2")}<span>放大曲线</span></button></div></div>
           <div class="pitch-readout"><div class="current-pitch"><span id="live-note">—</span><span class="pitch-hz" id="live-hz">等待你的声音</span></div><div class="tuning-readout"><span id="tuning-status">准备好，就唱出一个音</span><strong id="live-cents">— <small>音分</small></strong></div></div>
-          <div class="pitch-chart"><canvas id="pitch-canvas" role="img" aria-label="最近十秒的演唱音高曲线，纵轴为音名，横轴为时间"></canvas><div class="chart-empty" id="chart-empty"><span class="empty-mic">${i("mic")}</span><strong>在这里，听见自己的进步</strong><span>开启麦克风，轻轻唱一个「啊」</span></div><div class="chart-legend"><span class="legend-target"></span>目标音 <span class="legend-live"></span>你的声音<span class="chart-window">最近 10 秒</span></div></div>
+          <div class="pitch-chart"><canvas id="pitch-canvas" role="img" aria-label="最近十秒的演唱音高曲线，纵轴为音名，横轴为时间，音域自动适应整段声音"></canvas><div class="chart-empty" id="chart-empty"><span class="empty-mic">${i("mic")}</span><strong>在这里，听见自己的进步</strong><span>开启麦克风，轻轻唱一个「啊」</span></div><div class="chart-legend"><span class="legend-target"></span><span id="chart-reference-label">标准音</span><span class="legend-live"></span>你的声音<span class="chart-range" id="chart-range">音域自适应</span><span class="chart-window">最近 10 秒</span></div></div>
           <div class="tuner-bottom"><span>${i("headphones")}建议佩戴耳机，识别更准确</span><button class="button primary" id="mic-button" data-action="mic">${i("mic")}开启麦克风</button></div>
         </section>
         <section class="card keyboard-card" id="keyboard-card"><div class="card-header"><h2>${i("piano")}听一个标准音</h2><div class="octave-switch"><button data-action="octave-down" aria-label="降低键盘八度">${i("minus")}</button><span id="octave-label">C3 – B4</span><button data-action="octave-up" aria-label="升高键盘八度">${i("plus")}</button></div></div><div class="keyboard-wrap"><div id="keyboard" class="keyboard" aria-label="标准音键盘"></div></div><div class="keyboard-footer"><span>点击琴键听音，再试着唱出来</span><span>电脑快捷键 <kbd>A</kbd> – <kbd>K</kbd></span></div></section>
@@ -179,6 +189,42 @@ app.innerHTML = `
 <dialog id="editor-dialog"><div class="dialog-head"><h2>写一段自己的旋律</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><label class="field">曲谱名称<input id="editor-title" value="我的旋律" maxlength="100"></label><label class="field">简谱<textarea id="editor-text" rows="5" spellcheck="false">1 1 5 5 | 6 6 5- | 4 4 3 3 | 2 2 1-</textarea></label><p class="notation-help">以 C 大调为基准：1–7 为音符，0 为休止；<code>1'</code> 高八度，<code>1,</code> 低八度；<code>1-</code> 两拍，<code>1_</code> 半拍，<code>1__</code> 四分之一拍；可用 #、b 升降音。请用空格分隔音符。</p><button class="button primary" data-action="save-editor">${i("check")}保存到我的曲谱</button></dialog>
 <dialog id="settings-dialog"><div class="dialog-head"><h2>让练习更适合你</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><label class="field">标准音 A4（Hz）<input id="tuning" type="number" min="430" max="450" step="1" value="440"><small>默认 440 Hz。调节后，识别与参考音会一起更新。</small></label><label class="field">跟唱延迟校正（毫秒）<input id="latency" type="number" min="0" max="500" step="10" value="100"><small>用于补偿设备输入延迟，只影响曲谱练习的对齐与评分。</small></label><div class="notice">手机和平板请通过 HTTPS 访问。局域网 HTTP 地址通常不能使用麦克风；本机 localhost 可以。</div><button class="button primary" data-action="save-settings">保存设置</button></dialog>
 <dialog id="help-dialog"><div class="dialog-head"><h2>从第一个音开始</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><div class="help-content"><h3>实时音准仪</h3><p>开启麦克风并允许浏览器录音。音名和曲线显示当前音高，音分表示距离最近标准音的偏差。绿色表示误差在 ±25 音分以内；音量太低、噪声或多人合唱会降低准确度。</p><h3>标准音模唱</h3><p>点击琴键或播放目标音，再用自然的声音模唱。「标准音模唱」模式会把偏差对准你选的目标音。钢琴与手风琴采用本地合成音色。</p><h3>曲谱练习</h3><p>选一首曲谱、调整速度与片段。先听示范，再开始练习。4 拍预备后跟着音符唱，默认不播放旋律，避免扬声器串音。音准命中率按有效发声采样计算，覆盖率表示目标发声时长中检测到有效声音的比例；节奏参考首次发声及换音时间，连续同音无法可靠区分。</p><h3>图片和 PDF</h3><p>简谱使用文字 OCR，必须校对八度和时值。五线谱需要附带的 Audiveris 服务，识别后也需要核对；复杂多声部只取选定主旋律，不支持完整乐队总谱。更准确的方式是从制谱软件导出 MusicXML。</p><h3>数据与隐私</h3><p>麦克风声音不上传、不录制。自定义曲谱和今日练习时长保存在当前浏览器中；没有账号与跨设备同步。电脑、平板、手机均可通过同一 HTTPS 网址访问。</p></div></dialog>`;
+
+const chartHost = document.querySelector<HTMLElement>(".workspace")!;
+const tunerCard = document.querySelector<HTMLElement>(".tuner-card")!;
+const mainColumn = document.querySelector<HTMLElement>(".main-column")!;
+chartHost.prepend(tunerCard);
+const chartDialog = document.createElement("dialog");
+chartDialog.id = "chart-focus-dialog";
+chartDialog.className = "chart-focus-dialog";
+chartDialog.setAttribute("aria-label", "放大的实时音高曲线");
+document.body.append(chartDialog);
+let chartExpanded = false;
+
+function setChartExpanded(expanded: boolean) {
+  chartExpanded = expanded;
+  if (expanded) {
+    chartDialog.append(tunerCard);
+    chartDialog.showModal();
+  } else {
+    if (chartDialog.open) chartDialog.close();
+    chartHost.insertBefore(tunerCard, mainColumn);
+  }
+  const button = $("chart-expand-button");
+  button.setAttribute("aria-pressed", String(expanded));
+  button.innerHTML =
+    i(expanded ? "minimize-2" : "maximize-2") +
+    `<span>${expanded ? "还原曲线" : "放大曲线"}</span>`;
+  refreshIcons();
+  button.focus({ preventScroll: true });
+}
+chartDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  setChartExpanded(false);
+});
+chartDialog.addEventListener("close", () => {
+  if (chartExpanded) setChartExpanded(false);
+});
 
 function refreshIcons() {
   createIcons({ icons: iconSet, attrs: { "stroke-width": 1.7 } });
@@ -262,6 +308,7 @@ function renderKeyboard() {
   updateTarget();
 }
 function setView(next: View) {
+  if (view !== next && chartExpanded) setChartExpanded(false);
   if (view !== next) stopSong();
   view = next;
   document.querySelectorAll<HTMLElement>("[data-view]").forEach((b) => {
@@ -340,6 +387,7 @@ function stopMic() {
   mic = micBusy = false;
   frame = null;
   samples = [];
+  pitchViewport.reset();
   updateMic();
 }
 function updateMic() {
@@ -350,9 +398,13 @@ function updateMic() {
     `<span></span>${micBusy ? "正在申请权限" : mic ? "正在聆听" : "麦克风未开启"}`;
   $("mic-status").classList.toggle("connected", mic);
   $("input-state").textContent = mic ? "已连接" : "未连接";
-  $("chart-empty").hidden = mic;
+  $("chart-empty").hidden = mic || playing;
   refreshIcons();
 }
+let cachedScore: PracticeScore | undefined;
+let cachedSelectionKey = "";
+let cachedNotes: ScoreNote[] = [];
+let chartReferencePitches: number[] = [];
 function selectedNotes(): ScoreNote[] {
   const start = Math.max(
     0,
@@ -362,9 +414,21 @@ function selectedNotes(): ScoreNote[] {
     score.notes.length,
     Number($<HTMLInputElement>("range-end").value),
   );
-  return score.notes
-    .slice(start, end)
-    .map((n) => ({ ...n, midi: n.midi === null ? null : n.midi + transpose }));
+  const key = `${start}:${end}:${transpose}`;
+  if (cachedScore !== score || cachedSelectionKey !== key) {
+    cachedScore = score;
+    cachedSelectionKey = key;
+    cachedNotes = score.notes
+      .slice(start, end)
+      .map((n) => ({
+        ...n,
+        midi: n.midi === null ? null : n.midi + transpose,
+      }));
+    chartReferencePitches = cachedNotes.flatMap((n) =>
+      n.midi === null ? [] : [n.midi],
+    );
+  }
+  return cachedNotes;
 }
 function onPitch(next: PitchFrame) {
   frame = next;
@@ -536,6 +600,7 @@ function stopSong() {
   updateSongButtons();
 }
 function updateSongButtons() {
+  $("chart-empty").hidden = mic || playing;
   $("practice-button").innerHTML =
     playing && practicing ? i("square") + "停止练习" : i("play") + "开始练习";
   $("listen-button").innerHTML =
@@ -719,6 +784,9 @@ document.addEventListener("click", async (event) => {
     return;
   }
   switch (el.dataset.action) {
+    case "expand-chart":
+      setChartExpanded(!chartExpanded);
+      break;
     case "mic":
       await toggleMic();
       break;
@@ -1022,62 +1090,92 @@ function draw(now: number) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
   let center = target;
-  if (view === "songs" && playing && activeIndex >= 0) {
-    center = selectedNotes()[activeIndex]?.midi ?? target;
+  if (view === "tuner" && mic && frame?.midi != null)
+    center = Math.round(frame.midi);
+  if (view === "songs") {
+    selectedNotes();
+    if (playing && activeIndex >= 0)
+      center = practiceNotes[activeIndex]?.midi ?? target;
   }
-  const rangePitch =
-    view === "tuner" && mic && frame?.midi != null ? frame.midi : center;
-  const low = Math.floor(rangePitch / 12) * 12 - 12,
-    high = low + 36;
-  const y = (m: number) => h - 35 - ((m - low) / (high - low)) * (h - 55);
-  const left = 45,
-    right = w - 16;
-  ctx.font = "10px system-ui";
+  const desiredRange = selectPitchRange(samples, {
+    now,
+    target: view === "match" ? target : undefined,
+    referencePitches: view === "songs" ? chartReferencePitches : undefined,
+  });
+  const { low, high } = pitchViewport.update(desiredRange, now);
+  const top = 20,
+    bottom = h - 34,
+    left = 53,
+    right = w - 24;
+  const plotHeight = Math.max(1, bottom - top);
+  const y = (m: number) => bottom - ((m - low) / (high - low)) * plotHeight;
+  const labelStep = chooseNoteLabelStep({ low, high }, plotHeight);
+  ctx.font = "11px system-ui";
   ctx.lineWidth = 1;
   for (let m = low; m <= high; m++) {
     const yy = y(m);
-    ctx.strokeStyle = m % 12 === 0 ? "#dce0e9" : "#eff0f5";
+    ctx.strokeStyle = m % 12 === 0 ? "#d4d0e4" : "#eeedf5";
     ctx.beginPath();
     ctx.moveTo(left, yy);
     ctx.lineTo(right, yy);
     ctx.stroke();
-    if ([0, 4, 7].includes(((m % 12) + 12) % 12)) {
-      ctx.fillStyle = m % 12 === 0 ? "#66637e" : "#858397";
-      ctx.fillText(noteLabel(m), 12, yy + 3);
+    if (((m % labelStep) + labelStep) % labelStep === 0) {
+      ctx.fillStyle = m % 12 === 0 ? "#66537e" : "#8a7d98";
+      ctx.fillText(noteLabel(m), 10, yy + 4);
     }
   }
   for (let t = 0; t <= 10; t += 2) {
     const x = left + (t / 10) * (right - left);
     ctx.strokeStyle = "#f0f1f6";
     ctx.beginPath();
-    ctx.moveTo(x, 15);
-    ctx.lineTo(x, h - 28);
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
     ctx.stroke();
-    ctx.fillStyle = "#aaabba";
-    ctx.fillText(t === 10 ? "现在" : `−${10 - t}s`, x - 7, h - 12);
+    ctx.fillStyle = "#998da6";
+    ctx.fillText(
+      t === 10 ? "现在" : `−${10 - t}s`,
+      x - (t === 10 ? 18 : 7),
+      h - 11,
+    );
   }
-  ctx.fillStyle = "#8d7de411";
-  ctx.fillRect(
-    left,
-    y(center + 0.25),
-    right - left,
-    y(center - 0.25) - y(center + 0.25),
-  );
-  ctx.setLineDash([5, 5]);
-  ctx.strokeStyle = "#a695df";
+  ctx.save();
   ctx.beginPath();
-  ctx.moveTo(left, y(center));
-  ctx.lineTo(right, y(center));
-  ctx.stroke();
-  ctx.setLineDash([]);
-  if (playing && view === "songs") {
-    const notes = selectedNotes(),
-      bpm = Number($<HTMLInputElement>("bpm").value);
-    let offset = 0;
-    for (const n of notes) {
-      const start = songStart + (offset * 60000) / bpm;
-      offset += n.beats;
-      const end = songStart + (offset * 60000) / bpm;
+  ctx.rect(left, top, Math.max(0, right - left), plotHeight);
+  ctx.clip();
+  if (center >= low && center <= high) {
+    ctx.fillStyle = "#8d7de414";
+    ctx.fillRect(
+      left,
+      y(center + 0.25),
+      right - left,
+      y(center - 0.25) - y(center + 0.25),
+    );
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = "#a695df";
+    ctx.beginPath();
+    ctx.moveTo(left, y(center));
+    ctx.lineTo(right, y(center));
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  if (playing && view === "songs" && songStart > 0) {
+    const elapsed = now - songStart;
+    let a = 0,
+      b = practiceOnsets.length;
+    while (a < b) {
+      const middle = (a + b) >>> 1;
+      if (practiceOnsets[middle] < elapsed - 10000) a = middle + 1;
+      else b = middle;
+    }
+    for (
+      let index = Math.max(0, a - 1);
+      index < practiceNotes.length;
+      index++
+    ) {
+      const n = practiceNotes[index];
+      const start = songStart + practiceOnsets[index];
+      if (start > now) break;
+      const end = start + n.beats * practiceBeatMs;
       const x1 = left + ((start - now + 10000) / 10000) * (right - left),
         x2 = left + ((end - now + 10000) / 10000) * (right - left);
       if (n.midi !== null && x2 >= left && x1 <= right) {
@@ -1092,14 +1190,14 @@ function draw(now: number) {
     }
   }
   ctx.strokeStyle = "#7460d4";
-  ctx.lineWidth = 2.2;
+  ctx.lineWidth = 2.8;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   ctx.beginPath();
   let pen = false;
   for (const s of samples) {
     const x = left + ((s.t - now + 10000) / 10000) * (right - left);
-    if (s.midi === null || s.midi < low || s.midi > high || x < left) {
+    if (s.midi === null || !Number.isFinite(s.midi) || x < left || x > right) {
       pen = false;
       continue;
     }
@@ -1108,8 +1206,13 @@ function draw(now: number) {
     pen = true;
   }
   ctx.stroke();
+  ctx.restore();
   if (now - lastUI > 100) {
     lastUI = now;
+    $("chart-range").textContent =
+      `自适应音域 ${noteLabel(low)} – ${noteLabel(high)}`;
+    $("chart-reference-label").textContent =
+      view === "tuner" ? "最近标准音" : "目标音";
     const valid = mic && frame?.midi !== null && frame?.frequency;
     const note = valid ? noteLabel(frame!.midi!) : "—";
     $("live-note").textContent = note;

@@ -10,7 +10,7 @@
 
 ## 可以做什么
 
-- **实时音准仪**：读取麦克风的单一音高，显示音名、频率、音分偏差、输入强度和最近 10 秒曲线；±25 音分以内显示为唱准。
+- **实时音准仪**：全宽的大幅音高曲线，支持进一步放大；纵轴根据最近 10 秒整段声音自动调整，跨八度的历史曲线完整保留，稳定后再缩小音域。显示音名、频率、音分偏差和输入强度；±25 音分以内显示为唱准。
 - **标准音模唱**：点击两组八度琴键或调整目标音，通过扬声器/耳机听音，再模唱。提供钢琴风格与手风琴风格的本地合成音色；默认 A4 = 440 Hz，可调整为 430–450 Hz。
 - **曲谱练习**：内置《小星星》《欢乐颂》和 C 大调音阶；支持示范、4 拍预备、节拍器、30–220 BPM、选择音符片段、±12 半音移调与循环练习。
 - **导入与编谱**：导入 MusicXML、MXL、MIDI 和本项目 JSON；手动输入简谱；图片/PDF 简谱可在浏览器生成 OCR 文字草稿。所有模板均可逐音校对音高与拍数，五线谱扫描件可选接入 Audiveris 服务。
@@ -81,6 +81,8 @@ BPM: 80
 电脑可用本机 `localhost`；手机/平板访问电脑的局域网 HTTP 地址时，浏览器通常不会提供麦克风。多端使用应把 `dist/` 部署到 HTTPS 静态站点，再在各设备访问同一地址。[浏览器麦克风安全上下文要求](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia)
 
 GitHub Pages 可托管前端：在仓库的 **Settings → Pages** 选择 **GitHub Actions**，由构建流程安装依赖、运行 `pnpm build`，将 `dist/` 作为 Pages 构建产物发布。项目使用相对资源路径，可部署在仓库子路径；上线状态与最终地址应以成功的 Pages 部署结果为准。[GitHub 官方部署说明](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
+
+**Vercel 同样可托管前端**：直接导入本仓库，选择 Vite、Node.js 22.x 和 `main` 生产分支；仓库已提供安装、构建与输出目录配置。部署成功后，手机和平板通过生产 HTTPS 地址访问并授权麦克风即可练习。具体设置、跨域名数据迁移及识别服务边界见 [Vercel 部署说明](docs/VERCEL.md)。
 
 本地 Audiveris 服务默认只接受电脑自身的请求。手机上的 `127.0.0.1` 指向手机，无法直接使用电脑的识别服务；可以先在电脑识别，导出 JSON 后转到手机。GitHub Pages 只托管前端，不运行 Python/Audiveris。
 

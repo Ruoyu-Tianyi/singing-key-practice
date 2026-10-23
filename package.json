@@ -5,6 +5,9 @@
   "type": "module",
   "description": "声准 · A private, browser-based singing pitch and rhythm practice studio",
   "license": "MIT",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "node scripts/export-licenses.mjs && tsc --noEmit && vite build",

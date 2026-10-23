@@ -1,0 +1,11 @@
+server/
+.tools/
+.venv/
+__pycache__/
+test-results/
+docs/
+dist/
+node_modules/
+.env
+.env.*
+!.env.example
