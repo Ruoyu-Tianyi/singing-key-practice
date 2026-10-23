@@ -17,7 +17,7 @@
 
 服务地址为 `http://127.0.0.1:8765/api/recognize`。在网页曲谱导入区域填写此地址即可。启动脚本只为子进程设置环境，保留 Windows 实际用户配置位置供 Java 的系统目录查询使用，同时把 Audiveris 的 APPDATA、LOCALAPPDATA、临时文件及 Java 用户目录定向到 `.tools/`。通过 `_JAVA_OPTIONS` 将 Java 堆上限设为 1.5 GB，覆盖官方启动器的 8 GB 默认值。
 
-默认允许的网页来源为 `http://localhost:5173`、`http://127.0.0.1:5173` 和 `https://ruoyu-tianyi.github.io`。**来源只包含协议、主机和端口，不包含 `/singing-key-practice/` 路径。**使用不同地址时可指定：
+默认允许的网页来源为 `http://localhost:5173`、`http://127.0.0.1:5173`、`https://ruoyu-tianyi.github.io` 和 `https://singing-key-practice.vercel.app`。**来源只包含协议、主机和端口，不包含 `/singing-key-practice/` 路径。**使用不同地址时可指定：
 
 ```powershell
 .\server\start-omr.ps1 -AllowedOrigins 'https://你的网页域名,http://localhost:5173'

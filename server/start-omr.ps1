@@ -1,5 +1,5 @@
 param(
-    [string]$AllowedOrigins = 'http://localhost:5173,http://127.0.0.1:5173,https://ruoyu-tianyi.github.io',
+    [string]$AllowedOrigins = 'http://localhost:5173,http://127.0.0.1:5173,https://ruoyu-tianyi.github.io,https://singing-key-practice.vercel.app',
     [ValidateRange(1024,65535)][int]$Port = 8765
 )
 $ErrorActionPreference = 'Stop'

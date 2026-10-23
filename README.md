@@ -2,7 +2,9 @@
 
 一个中文、开源的浏览器唱歌练习工具：听标准音、看自己的音高曲线，再按旋律练习音准与节奏。前端使用 TypeScript、Vite 和 Web Audio；日常练习无需账号或应用服务器。
 
-**在线使用：[打开声准练习室](https://ruoyu-tianyi.github.io/singing-key-practice/)**
+**在线使用：[打开声准练习室 · Vercel](https://singing-key-practice.vercel.app/)**
+
+备用入口：[GitHub Pages](https://ruoyu-tianyi.github.io/singing-key-practice/)。两个域名的浏览器本地数据独立，曲谱可通过 JSON 导出、导入迁移。
 
 源码：[Ruoyu-Tianyi/singing-key-practice](https://github.com/Ruoyu-Tianyi/singing-key-practice)。公开仓库，原创代码使用 MIT 许可。
 
