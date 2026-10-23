@@ -1,5 +1,11 @@
 import "./style.css";
 import {
+  amplitudeDb,
+  formatAmplitude,
+  meterPosition,
+  PREVIEW_FLOOR_DB,
+} from "./microphone-preview";
+import {
   createIcons,
   AudioLines,
   Mic,
@@ -98,6 +104,15 @@ const escape = (s: string) =>
   );
 const engine = new AudioEngine();
 let microphoneSettings: MicrophoneSettings = { ...DEFAULT_MICROPHONE_SETTINGS };
+let previewSettings: MicrophoneSettings = { ...microphoneSettings };
+let previewFrame: PitchFrame | null = null;
+let previewSamples: { t: number; midi: number | null }[] = [];
+const previewViewport = new PitchViewport();
+let previewOwnsMicrophone = false,
+  previewInvalid = false,
+  previewReceivedAt = 0,
+  lastPreviewPaint = -Infinity;
+let micError = "";
 let inputLatencyMs = 100;
 const pitchViewport = new PitchViewport();
 type View = "tuner" | "match" | "songs";
@@ -196,15 +211,21 @@ app.innerHTML = `
 <dialog id="editor-dialog" aria-labelledby="editor-dialog-title"><div class="dialog-head"><h2 id="editor-dialog-title">写一段自己的旋律</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><label class="field">曲谱名称<input id="editor-title" value="我的旋律" maxlength="100"></label><label class="field">简谱<textarea id="editor-text" rows="5" spellcheck="false">1 1 5 5 | 6 6 5- | 4 4 3 3 | 2 2 1-</textarea></label><p class="notation-help">以 C 大调为基准：1–7 为音符，0 为休止；<code>1'</code> 高八度，<code>1,</code> 低八度；<code>1-</code> 两拍，<code>1_</code> 半拍，<code>1__</code> 四分之一拍；可用 #、b 升降音。请用空格分隔音符。</p><button class="button primary" data-action="save-editor">${i("check")}保存到我的曲谱</button></dialog>
 <dialog id="settings-dialog" aria-labelledby="settings-dialog-title">
   <div class="dialog-head"><div><span class="eyebrow">TUNE YOUR LISTENING</span><h2 id="settings-dialog-title">让练习更适合你</h2></div><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div>
+  <section class="settings-preview" aria-labelledby="mic-preview-title">
+    <div class="mic-preview-heading"><h3 id="mic-preview-title">实时收音预览 <span id="mic-preview-status">未开启</span></h3><button id="mic-preview-button" class="button secondary" data-action="preview-mic" aria-pressed="false">${i("mic")}开启收音</button></div>
+    <div class="mic-preview-readouts"><div class="mic-preview-pitch"><strong id="mic-preview-note">—</strong><div><span id="mic-preview-frequency">等待你的声音</span><span id="mic-preview-cents">— 音分</span></div></div><div class="mic-preview-input"><div><span>分析音量</span><strong id="mic-preview-level">— dBFS</strong></div><div id="mic-preview-meter" class="mic-preview-meter" role="meter" aria-label="增益后的分析音量" aria-valuemin="-72" aria-valuemax="0" aria-valuenow="-72" aria-describedby="mic-preview-help"><span id="mic-preview-fill"></span><b id="mic-preview-gate-marker"></b></div><small id="mic-preview-raw">原始 — · 门限 —</small></div></div>
+    <div class="mic-preview-chart"><canvas id="mic-preview-canvas" role="img" aria-label="最近五秒的预览音高曲线，音域自动适应声音"></canvas><span id="mic-preview-message">开启收音，边唱边调</span><small>5s</small></div>
+  </section>
   <div class="settings-body">
-  <p class="settings-intro">轻声唱也能被听见。先试日常设置，再根据环境微调；保存后立即用于当前监听。</p>
+  <p class="settings-intro">收音参数立即预览，保存后用于练习；关闭将放弃未保存的改动。</p>
   <fieldset class="settings-section"><legend>麦克风收音</legend>
     <div class="mic-presets" aria-label="收音场景预设"><button class="button secondary" data-action="mic-preset" data-preset="soft">轻声练习</button><button class="button secondary" data-action="mic-preset" data-preset="balanced">日常环境</button><button class="button secondary" data-action="mic-preset" data-preset="noisy">环境较吵</button></div>
-    <p class="setting-note">预设会调整输入增益、音量门限和可信度，仍需点击保存。</p>
+    <p class="setting-note">预设会立即预览输入增益、音量门限和可信度的效果，保存后用于正式练习。</p>
     <label class="field" for="mic-gain">收音灵敏度 · 输入增益 <output id="mic-gain-value" for="mic-gain">1.0×</output><input id="mic-gain" type="range" min="0.5" max="4" step="0.1" value="1" aria-describedby="mic-gain-help"></label><p class="setting-help" id="mic-gain-help">调高后更容易拾取轻声，也会放大背景声。这是本机分析增益，不改变系统麦克风音量，也不会从扬声器播放人声。</p>
     <label class="field" for="mic-gate">音量门限 <output id="mic-gate-value" for="mic-gate">0.008</output><input id="mic-gate" type="range" min="0.001" max="0.05" step="0.001" value="0.008" aria-describedby="mic-gate-help"></label><p class="setting-help" id="mic-gate-help">越低越容易拾取轻声和尾音，也更容易收进环境声；越高越能忽略轻微噪声，但轻声曲线可能中断。数值是数字信号电平，不是实际声压。</p>
   </fieldset>
   <fieldset class="settings-section"><legend>识别频率与音域</legend>
+    <p class="setting-help" id="mic-preview-help">音量条为增益后的数字电平（dBFS），竖线为音量门限。预览只在本机分析，人声不会通过扬声器回放。仅在面板内开启的收音会随面板关闭而停止。</p>
     <label class="field" for="mic-range-preset">音域预设<select id="mic-range-preset"><option value="wide">宽音域 · 50–2200 Hz</option><option value="low">偏低音域 · 65–1000 Hz</option><option value="high">偏高音域 · 130–2000 Hz</option><option value="custom">自定义范围</option></select></label>
     <div class="settings-pair"><label class="field" for="mic-min-frequency">最低音高（Hz）<input id="mic-min-frequency" type="number" min="40" max="500" step="1" value="50" aria-describedby="mic-range-help"><small>可设为 40–500 Hz</small></label><label class="field" for="mic-max-frequency">最高音高（Hz）<input id="mic-max-frequency" type="number" min="200" max="3000" step="1" value="2200" aria-describedby="mic-range-help"><small>可设为 200–3000 Hz</small></label></div>
     <p class="setting-help" id="mic-range-help">Hz 在这里表示声音高低：例如 A4 = 440 Hz。缩小范围会忽略范围外的音高估计，超出范围时不显示曲线；不会将声音移调，也不能代替降噪。</p>
@@ -222,6 +243,9 @@ app.innerHTML = `
 </dialog>
 <dialog id="help-dialog" aria-labelledby="help-dialog-title"><div class="dialog-head"><h2 id="help-dialog-title">从第一个音开始</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><div class="help-content"><h3>实时音准仪</h3><p>开启麦克风并允许浏览器录音。音名和曲线显示当前音高，音分表示距离最近标准音的偏差。绿色表示误差在 ±25 音分以内；音量太低、噪声或多人合唱会降低准确度。</p><h3>标准音模唱</h3><p>点击琴键或播放目标音，再用自然的声音模唱。「标准音模唱」模式会把偏差对准你选的目标音。钢琴与手风琴采用本地合成音色。</p><h3>曲谱练习</h3><p>选一首曲谱、调整速度与片段。先听示范，再开始练习。4 拍预备后跟着音符唱，默认不播放旋律，避免扬声器串音。音准命中率按有效发声采样计算，覆盖率表示目标发声时长中检测到有效声音的比例；节奏参考首次发声及换音时间，连续同音无法可靠区分。</p><h3>图片和 PDF</h3><p>简谱使用文字 OCR，必须校对八度和时值。五线谱需要附带的 Audiveris 服务，识别后也需要核对；复杂多声部只取选定主旋律，不支持完整乐队总谱。更准确的方式是从制谱软件导出 MusicXML。</p><h3>数据与隐私</h3><p>麦克风声音不上传、不录制。自定义曲谱和今日练习时长保存在当前浏览器中；没有账号与跨设备同步。电脑、平板、手机均可通过同一 HTTPS 网址访问。</p></div></dialog>`;
 
+const settingsDialog = $<HTMLDialogElement>("settings-dialog");
+const previewCanvas = $<HTMLCanvasElement>("mic-preview-canvas");
+const previewContext = previewCanvas.getContext("2d")!;
 const chartHost = document.querySelector<HTMLElement>(".workspace")!;
 const tunerCard = document.querySelector<HTMLElement>(".tuner-card")!;
 const mainColumn = document.querySelector<HTMLElement>(".main-column")!;
@@ -326,6 +350,7 @@ function updateMicrophoneDescriptions() {
       ? ` 当前窗口约 ${((window / rate) * 1000).toFixed(1)} 毫秒。`
       : ` 以 48,000 Hz 为例，此窗口约 ${((window / 48000) * 1000).toFixed(1)} 毫秒，实际时长在开启麦克风后显示。`,
   );
+  if (settingsDialog.open) updateMicrophonePreview();
 }
 function fillMicrophoneSettings(settings: MicrophoneSettings) {
   for (const [key, id] of Object.entries(microphoneFields)) {
@@ -336,7 +361,9 @@ function fillMicrophoneSettings(settings: MicrophoneSettings) {
   $("settings-error").hidden = true;
   updateMicrophoneDescriptions();
 }
-function readMicrophoneSettings(): MicrophoneSettings | null {
+function readMicrophoneSettings(
+  reportErrors = true,
+): MicrophoneSettings | null {
   const result: Record<string, number> = {};
   for (const [key, id] of Object.entries(microphoneFields)) {
     const input = $<HTMLInputElement | HTMLSelectElement>(id);
@@ -345,23 +372,217 @@ function readMicrophoneSettings(): MicrophoneSettings | null {
       !input.checkValidity() ||
       !Number.isFinite(Number(input.value))
     ) {
-      setText(
-        "settings-error",
-        "请填写有效的收音设置，数值需在各项标注的范围内。",
-      );
-      $("settings-error").hidden = false;
-      input.focus();
+      if (reportErrors) {
+        setText(
+          "settings-error",
+          "请填写有效的收音设置，数值需在各项标注的范围内。",
+        );
+        $("settings-error").hidden = false;
+        input.focus();
+      }
       return null;
     }
     result[key] = Number(input.value);
   }
   if (result.minFrequency >= result.maxFrequency) {
-    setText("settings-error", "最低音高必须小于最高音高。请检查识别范围。");
-    $("settings-error").hidden = false;
-    $("mic-min-frequency").focus();
+    if (reportErrors) {
+      setText("settings-error", "最低音高必须小于最高音高。请检查识别范围。");
+      $("settings-error").hidden = false;
+      $("mic-min-frequency").focus();
+    }
     return null;
   }
   return result as unknown as MicrophoneSettings;
+}
+function resetPreviewFrames() {
+  previewFrame = null;
+  previewSamples = [];
+  previewReceivedAt = 0;
+  lastPreviewPaint = -Infinity;
+  previewViewport.reset();
+}
+function receivePreviewFrame(next: PitchFrame) {
+  if (!settingsDialog.open || !mic) return;
+  previewFrame = next;
+  previewReceivedAt = performance.now();
+  previewSamples.push({ t: previewReceivedAt, midi: next.midi });
+  while (
+    previewSamples.length &&
+    previewSamples[0].t < previewReceivedAt - 5500
+  )
+    previewSamples.shift();
+}
+function updateMicrophonePreview() {
+  if (!settingsDialog.open) return;
+  const draft = readMicrophoneSettings(false);
+  previewInvalid = draft === null;
+  if (draft) {
+    previewSettings = draft;
+    engine.setMicrophonePreview(draft, receivePreviewFrame);
+  }
+  renderMicrophonePreview(performance.now(), true);
+}
+function closeMicrophonePreview() {
+  engine.clearMicrophonePreview();
+  const stopOwned = previewOwnsMicrophone;
+  previewOwnsMicrophone = false;
+  previewInvalid = false;
+  resetPreviewFrames();
+  if (stopOwned) stopMic();
+}
+settingsDialog.addEventListener("close", closeMicrophonePreview);
+
+function renderMicrophonePreview(now: number, force = false) {
+  if (!settingsDialog.open || (!force && now - lastPreviewPaint < 50)) return;
+  lastPreviewPaint = now;
+  const fresh = mic && previewFrame !== null && now - previewReceivedAt <= 350;
+  const raw =
+    fresh && Number.isFinite(previewFrame!.rms)
+      ? Math.max(0, previewFrame!.rms)
+      : 0;
+  const adjusted = raw * previewSettings.inputGain;
+  const valid =
+    fresh &&
+    adjusted >= previewSettings.noiseThreshold &&
+    previewFrame!.clarity >= previewSettings.clarityThreshold &&
+    previewFrame!.midi !== null &&
+    Number.isFinite(previewFrame!.midi) &&
+    previewFrame!.frequency !== null &&
+    Number.isFinite(previewFrame!.frequency) &&
+    previewFrame!.frequency >= previewSettings.minFrequency &&
+    previewFrame!.frequency <= previewSettings.maxFrequency;
+  document
+    .querySelector(".settings-preview")!
+    .classList.toggle("is-listening", mic);
+  setText(
+    "mic-preview-status",
+    micBusy ? "连接中" : mic ? "正在聆听" : "未开启",
+  );
+  const label = micBusy ? "取消连接" : mic ? "停止收音" : "开启收音";
+  const button = $("mic-preview-button");
+  button.setAttribute("aria-pressed", String(mic));
+  if (button.textContent !== label) {
+    button.innerHTML = i(mic || micBusy ? "square" : "mic") + label;
+    refreshIcons();
+  }
+  setText("mic-preview-note", valid ? noteLabel(previewFrame!.midi!) : "—");
+  setText(
+    "mic-preview-frequency",
+    valid
+      ? `${previewFrame!.frequency!.toFixed(1)} Hz`
+      : mic
+        ? "等待稳定音高"
+        : "等待你的声音",
+  );
+  const cents =
+    valid &&
+    previewFrame!.cents !== null &&
+    Number.isFinite(previewFrame!.cents)
+      ? Math.round(previewFrame!.cents)
+      : null;
+  setText(
+    "mic-preview-cents",
+    cents === null ? "— 音分" : `${cents > 0 ? "+" : ""}${cents} 音分`,
+  );
+  $("mic-preview-cents").classList.toggle(
+    "in-tune",
+    cents !== null && Math.abs(cents) <= 25,
+  );
+  setText("mic-preview-level", formatAmplitude(adjusted));
+  setText(
+    "mic-preview-raw",
+    `原始 ${formatAmplitude(raw).replace(" dBFS", "")} · 门限 ${formatAmplitude(previewSettings.noiseThreshold).replace(" dBFS", "")}`,
+  );
+  $("mic-preview-fill").style.width = `${meterPosition(adjusted) * 100}%`;
+  $("mic-preview-gate-marker").style.left =
+    `${meterPosition(previewSettings.noiseThreshold) * 100}%`;
+  const meter = $("mic-preview-meter");
+  const db = Math.max(PREVIEW_FLOOR_DB, Math.min(0, amplitudeDb(adjusted)));
+  meter.setAttribute("aria-valuenow", db.toFixed(1));
+  meter.setAttribute(
+    "aria-valuetext",
+    `增益后 ${formatAmplitude(adjusted)}，原始 ${formatAmplitude(raw)}`,
+  );
+  const message = previewInvalid
+    ? "参数未完整，保留上一组有效预览"
+    : micBusy
+      ? "等待麦克风授权，可点击取消"
+      : !mic
+        ? micError || "开启收音，边唱边调"
+        : !fresh || raw === 0
+          ? "轻声唱一个持续的音"
+          : adjusted < previewSettings.noiseThreshold
+            ? "低于音量门限 · 可提高灵敏度或降低门限"
+            : !valid
+              ? "等待稳定音高 · 检查音域与可信度"
+              : "实时预览中 · 保存后用于练习";
+  setText("mic-preview-message", message);
+  $("mic-preview-message").classList.toggle(
+    "preview-warning",
+    previewInvalid || !!micError,
+  );
+  const rect = previewCanvas.getBoundingClientRect(),
+    dpr = window.devicePixelRatio || 1;
+  if (rect.width < 1 || rect.height < 1) return;
+  const w = rect.width,
+    h = rect.height;
+  if (
+    previewCanvas.width !== Math.round(w * dpr) ||
+    previewCanvas.height !== Math.round(h * dpr)
+  ) {
+    previewCanvas.width = Math.round(w * dpr);
+    previewCanvas.height = Math.round(h * dpr);
+  }
+  const ctx = previewContext;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const { low, high } = previewViewport.update(
+    selectPitchRange(previewSamples, { now, windowMs: 5000 }),
+    now,
+  );
+  const left = 29,
+    right = w - 8,
+    top = 7,
+    bottom = Math.max(8, h - 21);
+  const y = (midi: number) =>
+    bottom - ((midi - low) / (high - low)) * (bottom - top);
+  ctx.font = "9px 'Space Grotesk', system-ui";
+  const step = chooseNoteLabelStep({ low, high }, bottom - top);
+  for (let midi = low; midi <= high; midi++) {
+    if (((midi % step) + step) % step !== 0) continue;
+    ctx.strokeStyle = "rgba(159,184,209,.12)";
+    ctx.beginPath();
+    ctx.moveTo(left, y(midi));
+    ctx.lineTo(right, y(midi));
+    ctx.stroke();
+    ctx.fillStyle = "#8295b0";
+    ctx.fillText(noteLabel(midi), 1, y(midi) + 3);
+  }
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left, top, Math.max(1, right - left), Math.max(1, bottom - top));
+  ctx.clip();
+  ctx.beginPath();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#6fe6e9";
+  let pen = false;
+  for (const sample of previewSamples) {
+    const x = left + ((sample.t - now + 5000) / 5000) * (right - left);
+    if (
+      sample.midi === null ||
+      !Number.isFinite(sample.midi) ||
+      x < left ||
+      x > right
+    ) {
+      pen = false;
+      continue;
+    }
+    if (pen) ctx.lineTo(x, y(sample.midi));
+    else ctx.moveTo(x, y(sample.midi));
+    pen = true;
+  }
+  ctx.stroke();
+  ctx.restore();
 }
 function toast(message: string) {
   $("toast").textContent = message;
@@ -507,6 +728,7 @@ async function toggleMic() {
     return;
   }
   const generation = ++micGeneration;
+  micError = "";
   micBusy = true;
   updateMic();
   try {
@@ -517,12 +739,13 @@ async function toggleMic() {
     frame = null;
     samples = [];
   } catch (error) {
-    if (generation === micGeneration)
-      toast(
+    if (generation === micGeneration) {
+      micError =
         error instanceof Error
           ? error.message
-          : "无法开启麦克风，请检查浏览器权限。",
-      );
+          : "无法开启麦克风，请检查浏览器权限。";
+      toast(micError);
+    }
   } finally {
     if (generation === micGeneration) {
       micBusy = false;
@@ -539,6 +762,8 @@ function stopMic() {
   mic = micBusy = false;
   frame = null;
   samples = [];
+  micError = "";
+  resetPreviewFrames();
   pitchViewport.reset();
   updateMic();
 }
@@ -998,10 +1223,20 @@ document.addEventListener("click", async (event) => {
       }
       break;
     case "settings":
+      previewOwnsMicrophone = false;
+      previewSettings = { ...microphoneSettings };
+      previewInvalid = false;
+      resetPreviewFrames();
       fillMicrophoneSettings(microphoneSettings);
       $<HTMLInputElement>("tuning").value = String(engine.a4);
       $<HTMLInputElement>("latency").value = String(inputLatencyMs);
-      $<HTMLDialogElement>("settings-dialog").showModal();
+      settingsDialog.showModal();
+      updateMicrophonePreview();
+      break;
+    case "preview-mic":
+      previewOwnsMicrophone = !(mic || micBusy);
+      await toggleMic();
+      renderMicrophonePreview(performance.now(), true);
       break;
     case "reset-mic-settings":
       fillMicrophoneSettings({ ...DEFAULT_MICROPHONE_SETTINGS });
@@ -1285,6 +1520,11 @@ editDialog.innerHTML = `<div class="dialog-head"><h2 id="score-edit-dialog-title
 document.body.append(editDialog);
 let lastUI = 0;
 function draw(now: number) {
+  if (settingsDialog.open) {
+    renderMicrophonePreview(now);
+    requestAnimationFrame(draw);
+    return;
+  }
   const rect = canvas.getBoundingClientRect(),
     dpr = window.devicePixelRatio || 1;
   if (

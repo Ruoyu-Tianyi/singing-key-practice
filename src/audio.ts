@@ -42,6 +42,13 @@ interface MicrophoneAnalysis {
   nextFrameTime: number;
 }
 
+interface MicrophonePreview {
+  options: MicrophoneSettings;
+  onFrame: (frame: PitchFrame) => void;
+  analyser: AnalyserNode | null;
+  analysis: MicrophoneAnalysis | null;
+}
+
 const NOTE_NAMES = [
   "C",
   "C#",
@@ -190,6 +197,7 @@ export class AudioEngine {
   private analyser: AnalyserNode | null = null;
   private analysis: MicrophoneAnalysis | null = null;
   private microphoneOptions = normalizeMicrophoneSettings();
+  private microphonePreview: MicrophonePreview | null = null;
   private animationFrame: number | null = null;
   private microphoneGeneration = 0;
   private playbackGeneration = 0;
@@ -223,6 +231,68 @@ export class AudioEngine {
     return { ...next };
   }
 
+  /** An isolated draft analysis of the current stream; never commits settings. */
+  setMicrophonePreview(
+    options: MicrophoneSettings,
+    onFrame: (frame: PitchFrame) => void,
+  ): void {
+    if (this.destroyed) return;
+    const preview = this.microphonePreview;
+    const next = normalizeMicrophoneSettings(
+      options,
+      preview?.options ?? this.microphoneOptions,
+    );
+    if (preview) {
+      if (preview.analyser && next.fftSize !== preview.options.fftSize) {
+        const analysis = this.createMicrophoneAnalysis(next.fftSize);
+        preview.analyser.fftSize = next.fftSize;
+        preview.analysis = analysis;
+      } else if (
+        preview.analysis &&
+        next.updateRateHz !== preview.options.updateRateHz
+      ) {
+        preview.analysis.nextFrameTime = -Infinity;
+      }
+      preview.options = next;
+      preview.onFrame = onFrame;
+    } else {
+      this.microphonePreview = {
+        options: next,
+        onFrame,
+        analyser: null,
+        analysis: null,
+      };
+    }
+    this.activateMicrophonePreview();
+  }
+
+  clearMicrophonePreview(): void {
+    this.detachMicrophonePreview();
+    this.microphonePreview = null;
+  }
+
+  private activateMicrophonePreview(): void {
+    const preview = this.microphonePreview;
+    if (!preview || preview.analyser || !this.context || !this.microphoneSource)
+      return;
+    const analysis = this.createMicrophoneAnalysis(preview.options.fftSize);
+    const analyser = this.context.createAnalyser();
+    analyser.fftSize = preview.options.fftSize;
+    analyser.smoothingTimeConstant = 0;
+    this.microphoneSource.connect(analyser);
+    preview.analyser = analyser;
+    preview.analysis = analysis;
+  }
+
+  private detachMicrophonePreview(): void {
+    const preview = this.microphonePreview;
+    if (!preview?.analyser) return;
+    this.microphoneSource?.disconnect(preview.analyser);
+    preview.analyser.disconnect();
+    preview.analyser = null;
+    preview.analysis = null;
+  }
+
   private createMicrophoneAnalysis(
     fftSize: MicrophoneSettings["fftSize"],
   ): MicrophoneAnalysis {
@@ -234,6 +304,35 @@ export class AudioEngine {
       detector,
       nextFrameTime: -Infinity,
     };
+  }
+
+  private readMicrophoneFrame(
+    analyser: AnalyserNode,
+    analysis: MicrophoneAnalysis,
+    options: Readonly<MicrophoneSettings>,
+    timestamp: number,
+    sampleRate: number,
+  ): PitchFrame | null {
+    if (timestamp + 0.5 < analysis.nextFrameTime) return null;
+    const interval = 1000 / options.updateRateHz;
+    // Keep a target clock with tolerance for rounded RAF timestamps. A slow
+    // frame never triggers multiple analyses or a backlog of catch-up work.
+    analysis.nextFrameTime = Number.isFinite(analysis.nextFrameTime)
+      ? analysis.nextFrameTime + interval
+      : timestamp + interval;
+    if (analysis.nextFrameTime <= timestamp + 0.5) {
+      analysis.nextFrameTime = timestamp + interval;
+    }
+    analyser.getFloatTimeDomainData(analysis.samples);
+    return detectPitchFrame(
+      analysis.samples,
+      sampleRate,
+      this.a4,
+      timestamp / 1000,
+      analysis.detector,
+      options,
+      analysis.amplifiedSamples,
+    );
   }
 
   private async getContext(): Promise<AudioContext> {
@@ -313,32 +412,34 @@ export class AudioEngine {
       this.analysis = this.createMicrophoneAnalysis(
         this.microphoneOptions.fftSize,
       );
+      this.activateMicrophonePreview();
       const tick = (timestamp: number) => {
         if (generation !== this.microphoneGeneration || this.destroyed) return;
         this.animationFrame = window.requestAnimationFrame(tick);
         const analysis = this.analysis;
-        if (!analysis || timestamp + 0.5 < analysis.nextFrameTime) return;
-        const interval = 1000 / this.microphoneOptions.updateRateHz;
-        // Keep a target clock with tolerance for rounded RAF timestamps. A slow
-        // frame never triggers multiple analyses or a backlog of catch-up work.
-        analysis.nextFrameTime = Number.isFinite(analysis.nextFrameTime)
-          ? analysis.nextFrameTime + interval
-          : timestamp + interval;
-        if (analysis.nextFrameTime <= timestamp + 0.5) {
-          analysis.nextFrameTime = timestamp + interval;
-        }
-        analyser.getFloatTimeDomainData(analysis.samples);
-        onFrame(
-          detectPitchFrame(
-            analysis.samples,
-            context.sampleRate,
-            this.a4,
-            timestamp / 1000,
-            analysis.detector,
+        if (analysis) {
+          const frame = this.readMicrophoneFrame(
+            analyser,
+            analysis,
             this.microphoneOptions,
-            analysis.amplifiedSamples,
-          ),
-        );
+            timestamp,
+            context.sampleRate,
+          );
+          if (frame) onFrame(frame);
+        }
+        // Main consumers may stop or replace the stream from their callback.
+        if (generation !== this.microphoneGeneration || this.destroyed) return;
+        const preview = this.microphonePreview;
+        if (preview?.analyser && preview.analysis) {
+          const frame = this.readMicrophoneFrame(
+            preview.analyser,
+            preview.analysis,
+            preview.options,
+            timestamp,
+            context.sampleRate,
+          );
+          if (frame) preview.onFrame(frame);
+        }
       };
       this.animationFrame = window.requestAnimationFrame(tick);
     } catch (error) {
@@ -355,6 +456,7 @@ export class AudioEngine {
       window.cancelAnimationFrame(this.animationFrame);
     }
     this.animationFrame = null;
+    this.detachMicrophonePreview();
     this.microphoneSource?.disconnect();
     this.analyser?.disconnect();
     this.stream?.getTracks().forEach((track) => track.stop());
@@ -552,6 +654,7 @@ export class AudioEngine {
     if (this.destroyed) return;
     this.destroyed = true;
     this.stopMicrophone();
+    this.clearMicrophonePreview();
     this.stopPlayback();
     const context = this.context;
     this.context = null;

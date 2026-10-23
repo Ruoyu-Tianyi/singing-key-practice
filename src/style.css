@@ -931,8 +931,160 @@ h1 em {
 }
 #settings-dialog > .dialog-head,
 #settings-dialog > .settings-actions,
+#settings-dialog > .settings-preview,
 #settings-dialog > #settings-error {
   flex-shrink: 0;
+}
+.settings-preview {
+  border: 1px solid #6fe6e926;
+  border-radius: 13px;
+  background: linear-gradient(120deg, #0d1b28, #111a2a);
+  padding: 8px 12px 5px;
+  margin: 0 0 12px;
+}
+.settings-preview.is-listening {
+  border-color: #6fe6e955;
+}
+.mic-preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mic-preview-heading h3 {
+  font-size: 13px;
+  font-weight: 500;
+  color: #ccdfeb;
+  margin: 0;
+}
+#mic-preview-status {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 400;
+  color: #7aa6b7;
+  margin-left: 5px;
+}
+.mic-preview-heading .button {
+  min-height: 44px;
+  font-size: 11px;
+  padding: 9px 12px;
+  gap: 6px;
+}
+.mic-preview-heading .button svg {
+  width: 13px;
+  height: 13px;
+}
+.mic-preview-readouts {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 0;
+}
+.mic-preview-pitch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.mic-preview-pitch > strong {
+  color: #c5efed;
+  font-size: 31px;
+  font-weight: 400;
+  letter-spacing: -1.3px;
+  line-height: 1.1;
+}
+.mic-preview-pitch > div {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #8da6bf;
+  font-size: 10px;
+  white-space: nowrap;
+}
+#mic-preview-cents {
+  color: #af9dd4;
+  font-size: 9px;
+}
+#mic-preview-cents.in-tune {
+  color: #80dbcc;
+}
+.mic-preview-input {
+  min-width: 0;
+}
+.mic-preview-input > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 10px;
+  color: #94adc1;
+}
+.mic-preview-input strong {
+  color: #a8d9e0;
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.mic-preview-meter {
+  position: relative;
+  height: 7px;
+  background: #233149;
+  border-radius: 5px;
+  margin: 8px 0 6px;
+}
+#mic-preview-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #489fae, #87eece);
+  border-radius: 5px;
+  transition: width 0.07s linear;
+}
+#mic-preview-gate-marker {
+  position: absolute;
+  height: 13px;
+  width: 2px;
+  top: -3px;
+  background: #c1a5f3;
+  border-radius: 1px;
+}
+#mic-preview-raw {
+  display: block;
+  color: #8197b0;
+  font-size: 9px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.mic-preview-chart {
+  position: relative;
+}
+#mic-preview-canvas {
+  width: 100%;
+  height: 75px;
+  display: block;
+}
+#mic-preview-message {
+  position: absolute;
+  bottom: 1px;
+  left: 29px;
+  right: 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #829cb6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#mic-preview-message.preview-warning {
+  color: #eac294;
+}
+.mic-preview-chart > small {
+  position: absolute;
+  right: 3px;
+  top: 2px;
+  font-size: 8px;
+  color: #637f99;
 }
 .settings-body {
   min-height: 0;
@@ -3270,6 +3422,80 @@ dialog > p,
   .settings-pair {
     grid-template-columns: 1fr;
     gap: 0;
+  }
+}
+@media (max-width: 760px) {
+  .settings-preview {
+    padding: 5px 10px 4px;
+    margin-bottom: 9px;
+  }
+  .mic-preview-heading h3 {
+    font-size: 12px;
+  }
+  .mic-preview-heading .button {
+    font-size: 10px;
+    padding: 8px;
+  }
+  #mic-preview-status {
+    font-size: 8px;
+    margin-left: 3px;
+  }
+  .mic-preview-readouts {
+    gap: 10px;
+    padding: 2px 0 5px;
+  }
+  .mic-preview-pitch {
+    gap: 6px;
+  }
+  .mic-preview-pitch > strong {
+    font-size: 27px;
+  }
+  .mic-preview-pitch > div {
+    font-size: 9px;
+    gap: 4px;
+  }
+  .mic-preview-input > div:first-child,
+  .mic-preview-input strong {
+    font-size: 9px;
+  }
+  #mic-preview-raw {
+    font-size: 8px;
+  }
+  #mic-preview-canvas {
+    height: 69px;
+  }
+  #mic-preview-message {
+    font-size: 9px;
+  }
+}
+@media (max-width: 760px) and (max-height: 650px) {
+  #settings-dialog {
+    padding: 16px;
+  }
+  #settings-dialog > .dialog-head {
+    margin-bottom: 10px;
+  }
+  #settings-dialog .dialog-head .eyebrow {
+    display: none;
+  }
+  .settings-preview {
+    padding-top: 2px;
+    padding-bottom: 1px;
+  }
+  #mic-preview-canvas {
+    height: 45px;
+  }
+  .mic-preview-pitch > strong {
+    font-size: 24px;
+  }
+  .mic-preview-heading h3 {
+    font-size: 11px;
+  }
+  #mic-preview-status {
+    display: none;
+  }
+  .settings-actions {
+    padding-top: 10px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

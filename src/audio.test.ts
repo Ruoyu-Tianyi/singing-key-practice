@@ -287,7 +287,7 @@ function mockLiveMicrophone(frequency = 440, amplitude = 0.004) {
       return ++frameId;
     },
   );
-  const analyser = {
+  const makeAnalyser = () => ({
     fftSize: 4096,
     smoothingTimeConstant: 0,
     connect: vi.fn(),
@@ -304,10 +304,16 @@ function mockLiveMicrophone(frequency = 440, amplitude = 0.004) {
           ),
         );
     }),
-  };
+  });
+  const analyser = makeAnalyser();
+  const analysers: ReturnType<typeof makeAnalyser>[] = [];
   const source = { connect: vi.fn(), disconnect: vi.fn() };
   Object.assign(browser.context, {
-    createAnalyser: vi.fn(() => analyser),
+    createAnalyser: vi.fn(() => {
+      const result = analysers.length ? makeAnalyser() : analyser;
+      analysers.push(result);
+      return result;
+    }),
     createMediaStreamSource: vi.fn(() => source),
   });
   const stopTrack = vi.fn();
@@ -320,8 +326,244 @@ function mockLiveMicrophone(frequency = 440, amplitude = 0.004) {
     scheduled = null;
     callback?.(timestamp);
   };
-  return { ...browser, analyser, source, stopTrack, getUserMedia, step };
+  return {
+    ...browser,
+    analyser,
+    analysers,
+    source,
+    stopTrack,
+    getUserMedia,
+    step,
+  };
 }
+
+describe("isolated draft microphone preview", () => {
+  it("analyzes one stream with independent draft settings and preserves committed frames", async () => {
+    const browser = mockLiveMicrophone();
+    const engine = new AudioEngine();
+    const committed = engine.microphoneSettings;
+    const mainFrame = vi.fn();
+    const previewFrame = vi.fn();
+    engine.setMicrophonePreview(
+      normalizeMicrophoneSettings({ inputGain: 4 }),
+      previewFrame,
+    );
+    expect(browser.getUserMedia).not.toHaveBeenCalled();
+    expect(browser.analysers).toHaveLength(0);
+    await engine.startMicrophone(mainFrame);
+    browser.step(0);
+    expect(browser.getUserMedia).toHaveBeenCalledOnce();
+    expect(browser.analysers).toHaveLength(2);
+    expect(browser.source.connect.mock.calls).toEqual([
+      [browser.analysers[0]],
+      [browser.analysers[1]],
+    ]);
+    expect(mainFrame.mock.lastCall![0].frequency).toBeNull();
+    expect(previewFrame.mock.lastCall![0].frequency).toBeCloseTo(440, 0);
+    expect(previewFrame.mock.lastCall![0].rms).toBe(
+      mainFrame.mock.lastCall![0].rms,
+    );
+    expect(engine.microphoneSettings).toEqual(committed);
+    expect(
+      browser.analysers.every((node) => node.connect.mock.calls.length === 0),
+    ).toBe(true);
+
+    const factories = vi.spyOn(PitchDetector, "forFloat32Array");
+    const previewAnalyser = browser.analysers[1];
+    const originalBuffer =
+      previewAnalyser.getFloatTimeDomainData.mock.lastCall![0];
+    engine.setMicrophonePreview(
+      normalizeMicrophoneSettings({
+        inputGain: 4,
+        minFrequency: 500,
+        maxFrequency: 1000,
+      }),
+      previewFrame,
+    );
+    browser.step(1000 / 30);
+    expect(previewFrame.mock.lastCall![0].frequency).toBeNull();
+    expect(previewAnalyser.getFloatTimeDomainData.mock.lastCall![0]).toBe(
+      originalBuffer,
+    );
+    expect(factories).not.toHaveBeenCalled();
+    engine.setMicrophonePreview(
+      normalizeMicrophoneSettings({ inputGain: 4, fftSize: 8192 }),
+      previewFrame,
+    );
+    browser.step(2000 / 30);
+    expect(previewFrame.mock.lastCall![0].frequency).toBeCloseTo(440, 0);
+    expect(
+      previewAnalyser.getFloatTimeDomainData.mock.lastCall![0],
+    ).toHaveLength(8192);
+    expect(browser.analysers[0].fftSize).toBe(4096);
+    expect(
+      browser.analysers[0].getFloatTimeDomainData.mock.lastCall![0],
+    ).toHaveLength(4096);
+    engine.setMicrophonePreview(
+      {
+        ...normalizeMicrophoneSettings({ inputGain: 4, fftSize: 8192 }),
+        inputGain: Number.NaN,
+        minFrequency: 500,
+        maxFrequency: 200,
+      },
+      previewFrame,
+    );
+    browser.step(3000 / 30);
+    expect(previewFrame.mock.lastCall![0].frequency).toBeCloseTo(440, 0);
+    expect(
+      mainFrame.mock.calls.every(([frame]) => frame.frequency === null),
+    ).toBe(true);
+    expect(engine.microphoneSettings).toEqual(committed);
+    expect(browser.getUserMedia).toHaveBeenCalledOnce();
+    expect(browser.analysers).toHaveLength(2);
+    await engine.close();
+  });
+
+  it("refreshes main and preview independently and reuses the analysis window for rate edits", async () => {
+    const browser = mockLiveMicrophone(440, 0);
+    const engine = new AudioEngine();
+    engine.configureMicrophone({ updateRateHz: 10 });
+    const mainFrame = vi.fn();
+    const previewFrame = vi.fn();
+    engine.setMicrophonePreview(
+      normalizeMicrophoneSettings({ updateRateHz: 60 }),
+      previewFrame,
+    );
+    await engine.startMicrophone(mainFrame);
+    for (let index = 0; index <= 60; index += 1)
+      browser.step(index * (1000 / 60));
+    expect(mainFrame).toHaveBeenCalledTimes(11);
+    expect(previewFrame).toHaveBeenCalledTimes(61);
+    const previewBuffer =
+      browser.analysers[1].getFloatTimeDomainData.mock.lastCall![0];
+    const factories = vi.spyOn(PitchDetector, "forFloat32Array");
+    engine.setMicrophonePreview(
+      normalizeMicrophoneSettings({ updateRateHz: 20 }),
+      previewFrame,
+    );
+    mainFrame.mockClear();
+    previewFrame.mockClear();
+    for (let index = 0; index <= 60; index += 1)
+      browser.step(1100 + index * (1000 / 60));
+    expect(mainFrame).toHaveBeenCalledTimes(11);
+    expect(previewFrame).toHaveBeenCalledTimes(21);
+    expect(browser.analysers[1].getFloatTimeDomainData.mock.lastCall![0]).toBe(
+      previewBuffer,
+    );
+    expect(factories).not.toHaveBeenCalled();
+    expect(engine.microphoneSettings.updateRateHz).toBe(10);
+    await engine.close();
+  });
+
+  it("clears only the preview graph while the main microphone continues", async () => {
+    const browser = mockLiveMicrophone();
+    const engine = new AudioEngine();
+    const mainFrame = vi.fn();
+    const previewFrame = vi.fn();
+    await engine.startMicrophone(mainFrame);
+    engine.setMicrophonePreview(
+      normalizeMicrophoneSettings({ inputGain: 4 }),
+      previewFrame,
+    );
+    browser.step(0);
+    const previewAnalyser = browser.analysers[1];
+    engine.clearMicrophonePreview();
+    expect(browser.source.disconnect).toHaveBeenCalledExactlyOnceWith(
+      previewAnalyser,
+    );
+    expect(previewAnalyser.disconnect).toHaveBeenCalledOnce();
+    expect(browser.stopTrack).not.toHaveBeenCalled();
+    expect(browser.cancelAnimationFrame).not.toHaveBeenCalled();
+    browser.step(1000 / 30);
+    expect(mainFrame).toHaveBeenCalledTimes(2);
+    expect(previewFrame).toHaveBeenCalledOnce();
+    expect(browser.getUserMedia).toHaveBeenCalledOnce();
+    engine.clearMicrophonePreview();
+    expect(previewAnalyser.disconnect).toHaveBeenCalledOnce();
+    await engine.close();
+  });
+
+  it("stops both graphs and callbacks but retains preview registration for the next mic start", async () => {
+    const browser = mockLiveMicrophone();
+    const engine = new AudioEngine();
+    const mainFrame = vi.fn();
+    const previewFrame = vi.fn();
+    engine.setMicrophonePreview(
+      normalizeMicrophoneSettings({ inputGain: 4, fftSize: 8192 }),
+      previewFrame,
+    );
+    await engine.startMicrophone(mainFrame);
+    browser.step(0);
+    const previewAnalyser = browser.analysers[1];
+    engine.stopMicrophone();
+    expect(browser.stopTrack).toHaveBeenCalledOnce();
+    expect(browser.analysers[0].disconnect).toHaveBeenCalledOnce();
+    expect(previewAnalyser.disconnect).toHaveBeenCalledOnce();
+    expect(browser.cancelAnimationFrame).toHaveBeenCalled();
+    browser.step(1000 / 30);
+    expect(mainFrame).toHaveBeenCalledOnce();
+    expect(previewFrame).toHaveBeenCalledOnce();
+    await engine.startMicrophone(mainFrame);
+    browser.step(2000 / 30);
+    expect(browser.getUserMedia).toHaveBeenCalledTimes(2);
+    expect(browser.analysers).toHaveLength(4);
+    expect(browser.analysers[3].fftSize).toBe(8192);
+    expect(previewFrame).toHaveBeenCalledTimes(2);
+    expect(previewFrame.mock.lastCall![0].frequency).toBeCloseTo(440, 0);
+    engine.stopMicrophone();
+    engine.clearMicrophonePreview();
+    await engine.startMicrophone(mainFrame);
+    browser.step(3000 / 30);
+    expect(browser.analysers).toHaveLength(5);
+    expect(previewFrame).toHaveBeenCalledTimes(2);
+    await engine.close();
+  });
+
+  it("does not revive a cleared preview when microphone permission arrives later", async () => {
+    const browser = mockLiveMicrophone();
+    let grant!: (stream: MediaStream) => void;
+    browser.getUserMedia.mockReturnValueOnce(
+      new Promise<MediaStream>((resolve) => {
+        grant = resolve;
+      }),
+    );
+    const engine = new AudioEngine();
+    const mainFrame = vi.fn();
+    const previewFrame = vi.fn();
+    engine.setMicrophonePreview(
+      normalizeMicrophoneSettings({ inputGain: 4 }),
+      previewFrame,
+    );
+    const starting = engine.startMicrophone(mainFrame);
+    await Promise.resolve();
+    engine.clearMicrophonePreview();
+    grant({
+      getTracks: () => [{ stop: browser.stopTrack }],
+    } as unknown as MediaStream);
+    await starting;
+    browser.step(0);
+    expect(browser.analysers).toHaveLength(1);
+    expect(mainFrame).toHaveBeenCalledOnce();
+    expect(previewFrame).not.toHaveBeenCalled();
+    expect(engine.microphoneSettings).toEqual(DEFAULT_MICROPHONE_SETTINGS);
+    await engine.close();
+  });
+
+  it("honors clearing and stopping from the main callback before emitting preview frames", async () => {
+    const browser = mockLiveMicrophone();
+    const engine = new AudioEngine();
+    const previewFrame = vi.fn();
+    engine.setMicrophonePreview(
+      normalizeMicrophoneSettings({ inputGain: 4 }),
+      previewFrame,
+    );
+    await engine.startMicrophone(() => engine.stopMicrophone());
+    browser.step(0);
+    expect(previewFrame).not.toHaveBeenCalled();
+    expect(browser.stopTrack).toHaveBeenCalledOnce();
+    await engine.close();
+  });
+});
 
 describe("live microphone configuration", () => {
   it("applies gain, frequency and FFT changes without reconnecting or monitoring the microphone", async () => {
@@ -461,6 +703,11 @@ describe("audio lifecycle and musical scheduling", () => {
       );
       vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
       const engine = new AudioEngine();
+      const previewFrame = vi.fn();
+      engine.setMicrophonePreview(
+        normalizeMicrophoneSettings({ inputGain: 4 }),
+        previewFrame,
+      );
       const starting = engine.startMicrophone(vi.fn());
       await Promise.resolve();
       expect(getUserMedia).toHaveBeenCalledOnce();
@@ -473,6 +720,7 @@ describe("audio lifecycle and musical scheduling", () => {
       await starting;
       expect(stopTrack).toHaveBeenCalledOnce();
       expect(requestAnimationFrame).not.toHaveBeenCalled();
+      expect(previewFrame).not.toHaveBeenCalled();
       await engine.close();
     },
   );

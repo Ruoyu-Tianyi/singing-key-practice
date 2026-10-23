@@ -22,6 +22,8 @@ const audio = vi.hoisted(() => ({
   stopPlayback: vi.fn(),
   close: vi.fn(),
   configureMicrophone: vi.fn(),
+  setMicrophonePreview: vi.fn(),
+  clearMicrophonePreview: vi.fn(),
 }));
 
 let scheduledDraw: FrameRequestCallback;
@@ -70,6 +72,8 @@ vi.mock("./audio", async (importOriginal) => {
       playNote = audio.playNote;
       stopPlayback = audio.stopPlayback;
       close = audio.close;
+      setMicrophonePreview = audio.setMicrophonePreview;
+      clearMicrophonePreview = audio.clearMicrophonePreview;
     },
   };
 });
@@ -115,6 +119,30 @@ async function settle() {
 async function click(selector: string) {
   element(selector).click();
   await settle();
+}
+
+let previewClock = 100_000;
+function emitPreview(overrides: Partial<PitchFrame> = {}) {
+  const onPreview = audio.setMicrophonePreview.mock.lastCall?.[1] as
+    | ((frame: PitchFrame) => void)
+    | undefined;
+  if (!onPreview) throw new Error("Microphone preview was not registered");
+  previewClock += 200;
+  const clock = vi.spyOn(performance, "now").mockReturnValue(previewClock);
+  try {
+    onPreview({
+      frequency: 440,
+      midi: 69,
+      cents: 0,
+      clarity: 1,
+      rms: 0.02,
+      time: previewClock / 1000,
+      ...overrides,
+    });
+    scheduledDraw(previewClock);
+  } finally {
+    clock.mockRestore();
+  }
 }
 
 function pendingPermission() {
@@ -195,7 +223,9 @@ beforeAll(async () => {
   Object.defineProperty(HTMLDialogElement.prototype, "close", {
     configurable: true,
     value: function (this: HTMLDialogElement) {
+      const wasOpen = this.open;
       this.removeAttribute("open");
+      if (wasOpen) this.dispatchEvent(new Event("close"));
     },
   });
   // Import once: the app registers document/window listeners at module scope.
@@ -855,5 +885,148 @@ describe("practice room integration", () => {
     } finally {
       clock.mockRestore();
     }
+  });
+
+  it("shows live draft pitch and gain-adjusted volume beside the scrolling settings", async () => {
+    const saved = localStorage.getItem("shengzhun-settings");
+    await click('[data-action="settings"]');
+    const dialog = element<HTMLDialogElement>("#settings-dialog");
+    const preview = element(".settings-preview");
+    expect(preview.parentElement).toBe(dialog);
+    expect(element(".settings-body").contains(preview)).toBe(false);
+    expect(document.querySelectorAll("#mic-preview-canvas")).toHaveLength(1);
+    expect(audio.startMicrophone).not.toHaveBeenCalled();
+    await click("#mic-preview-button");
+    emitPreview();
+    expect(text("#mic-preview-note")).toBe("A4");
+    expect(text("#mic-preview-frequency")).toContain("440");
+    expect(text("#mic-preview-cents")).toContain("0");
+    expect(text("#mic-preview-raw")).toContain("原始");
+    const meter = element("#mic-preview-meter");
+    expect(meter.getAttribute("role")).toBe("meter");
+    const initialLevel = Number(meter.getAttribute("aria-valuenow"));
+    expect(initialLevel).toBeGreaterThan(-72);
+    const gain = element<HTMLInputElement>("#mic-gain");
+    gain.value = "2";
+    gain.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(audio.setMicrophonePreview.mock.lastCall?.[0].inputGain).toBe(2);
+    emitPreview();
+    expect(Number(meter.getAttribute("aria-valuenow"))).toBeGreaterThan(
+      initialLevel,
+    );
+    const marker = element("#mic-preview-gate-marker");
+    const initialGate = Number.parseFloat(marker.style.left);
+    const gate = element<HTMLInputElement>("#mic-gate");
+    gate.value = "0.03";
+    gate.dispatchEvent(new Event("input", { bubbles: true }));
+    emitPreview({ frequency: null, midi: null, cents: null, rms: 0.001 });
+    expect(Number.parseFloat(marker.style.left)).toBeGreaterThan(initialGate);
+    expect(text("#mic-preview-note")).toBe("—");
+    expect(text("#mic-preview-message")).toContain("门限");
+    const registrations = audio.setMicrophonePreview.mock.calls.length;
+    element<HTMLInputElement>("#mic-min-frequency").value = "400";
+    const maximum = element<HTMLInputElement>("#mic-max-frequency");
+    maximum.value = "200";
+    maximum.dispatchEvent(new Event("input", { bubbles: true }));
+    emitPreview();
+    expect(audio.setMicrophonePreview).toHaveBeenCalledTimes(registrations);
+    expect(text("#mic-preview-message")).toContain("参数未完整");
+    expect(text("#mic-preview-note")).toBe("A4");
+    expect(audio.configureMicrophone).not.toHaveBeenCalled();
+    expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+    await click("#settings-dialog [data-close]");
+    expect(audio.clearMicrophonePreview).toHaveBeenCalled();
+    expect(audio.stopMicrophone).toHaveBeenCalledOnce();
+  });
+
+  it("saves previewed settings and stops microphone capture owned by the panel", async () => {
+    try {
+      await click('[data-action="settings"]');
+      await click("#mic-preview-button");
+      const gain = element<HTMLInputElement>("#mic-gain");
+      gain.value = "2";
+      gain.dispatchEvent(new Event("input", { bubbles: true }));
+      emitPreview();
+      expect(audio.configureMicrophone).not.toHaveBeenCalled();
+      await click('[data-action="save-settings"]');
+      expect(audio.configureMicrophone).toHaveBeenLastCalledWith({
+        ...DEFAULT_MICROPHONE_SETTINGS,
+        inputGain: 2,
+      });
+      expect(element<HTMLDialogElement>("#settings-dialog").open).toBe(false);
+      expect(audio.stopMicrophone).toHaveBeenCalledOnce();
+      expect(text("#input-state")).toBe("未连接");
+      await click('[data-action="settings"]');
+      expect(element<HTMLInputElement>("#mic-gain").value).toBe("2");
+      expect(audio.startMicrophone).toHaveBeenCalledOnce();
+    } finally {
+      await restorePracticeSettings();
+    }
+  });
+
+  it("keeps an active practice session on committed analysis while previewing drafts", async () => {
+    await saveMelody("独立收音预览回归", "1 2");
+    element<HTMLInputElement>("#bpm").value = "60";
+    await click("#practice-button");
+    const scheduled = callbacks();
+    scheduled.onTimeline(1000);
+    const onPitch = audio.startMicrophone.mock.lastCall![0] as (
+      frame: PitchFrame,
+    ) => void;
+    const saved = localStorage.getItem("shengzhun-settings");
+    await click('[data-action="settings"]');
+    expect(audio.startMicrophone).toHaveBeenCalledOnce();
+    const gain = element<HTMLInputElement>("#mic-gain");
+    gain.value = "3";
+    gain.dispatchEvent(new Event("input", { bubbles: true }));
+    element<HTMLInputElement>("#tuning").value = "449";
+    element<HTMLInputElement>("#latency").value = "400";
+    emitPreview({ frequency: 880, midi: 81 });
+    for (const [midi, milliseconds] of [
+      [60, 1100],
+      [60, 1200],
+      [62, 2100],
+    ]) {
+      onPitch({
+        frequency: 440 * 2 ** ((midi - 69) / 12),
+        midi,
+        cents: 0,
+        clarity: 1,
+        rms: 0.2,
+        time: milliseconds / 1000,
+      });
+    }
+    scheduled.onComplete();
+    await vi.advanceTimersByTimeAsync(100);
+    const values = [
+      ...element("#practice-result").querySelectorAll("strong"),
+    ].map((node) => node.textContent);
+    expect(values[0]).toBe("100%");
+    expect(values[2]).toBe("0 ms");
+    const stops = audio.stopMicrophone.mock.calls.length;
+    await click("#settings-dialog [data-close]");
+    expect(audio.stopMicrophone).toHaveBeenCalledTimes(stops);
+    expect(text("#input-state")).toBe("已连接");
+    expect(audio.configureMicrophone).not.toHaveBeenCalled();
+    expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+    expect(text("#a4-display")).toBe("440");
+  });
+
+  it("cancels preview capture when the panel closes before microphone permission resolves", async () => {
+    await click('[data-action="settings"]');
+    const grant = pendingPermission();
+    await click("#mic-preview-button");
+    expect(text("#mic-status")).toContain("正在申请权限");
+    await click("#settings-dialog [data-close]");
+    expect(audio.clearMicrophonePreview).toHaveBeenCalled();
+    expect(audio.stopMicrophone).toHaveBeenCalledOnce();
+    grant();
+    await settle();
+    expect(element<HTMLDialogElement>("#settings-dialog").open).toBe(false);
+    expect(text("#input-state")).toBe("未连接");
+    expect(element("#mic-status").classList.contains("connected")).toBe(false);
+    await click('[data-action="settings"]');
+    expect(text("#mic-preview-note")).toBe("—");
+    expect(audio.startMicrophone).toHaveBeenCalledOnce();
   });
 });
