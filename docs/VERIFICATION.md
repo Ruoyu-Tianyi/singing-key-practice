@@ -27,13 +27,15 @@ Python 的两项单元测试没有调用真实 Audiveris；另已实际运行官
 | 真人独唱与扬声器播放 | 待实体设备实测 | 音名/频率/音分随人声变化；钢琴风格与手风琴风格可听，佩戴耳机后跟唱反馈合理。 |
 | 简谱图片/PDF OCR | 浏览器验证通过 | 实际上传 PNG 与 PDF 样本，下载识别模型、生成草稿、修正延长线、导入 7 个音符并逐音校对。原始 OCR 漏掉延长线，不能免人工确认。 |
 | Audiveris 五线谱识别 | 本机已准备便携环境，端到端验证通过 | 官方 cucaracha.png 经本地接口返回 MusicXML，网页显示「29 - LA CUCARACHA」、3/4、68 个音符，可进入校对与练习。官方程序、Java 和 OCR 模型位于忽略的 .tools，不随源码提交。 |
-| HTTPS 静态部署 | 已发布并验证 | GitHub Actions 构建部署成功；首页与许可证页返回 200，浏览器 A4 显示 440 Hz，无控制台错误；实体设备麦克风授权仍待实测。 |
+| HTTPS 静态部署 | Auralis 已发布并验证 | Vercel `main` 的 `8d83dd2` 状态为 Ready，GitHub Pages 构建部署成功；Vercel 首页、前端资源、图标、清单、字体与许可证均匿名返回 200，内容与本地构建一致；实体设备麦克风授权仍待实测。 |
 
 公网版本额外验证：MIDI 文件成功导入为 4 个旋律音符；PNG 简谱 OCR 成功生成可编辑草稿，浏览器未记录错误。本地开发服务额外验证：PDF 简谱识别、修正延长线、逐音编辑与手机设置入口已通过。
 
 此前曲线改版验证：桌面 1280px 宽度下，普通曲线画布约 922×444px；手机 390px 下可放大为约 368×562px。这些尺寸为此前布局记录，Auralis 改版不以其作为固定尺寸要求。浏览器已复验放大、还原与 Escape 退出；绘图集成测试注入 C2→C6 两个有效音高，确认历史曲线均位于可视区域，整首选段也参与自动范围计算。
 
-Vercel 改版前生产部署已验证：`https://singing-key-practice.vercel.app/`；`main` 的 `31ee8af` 部署状态为 Ready，首页与许可证页匿名请求为 200，加载与当时本地构建一致的前端资源；手机 390px 宽度下放大模式可用，A4 显示 440 Hz，无浏览器错误。Auralis 改版的公网发布结果应在部署后另行记录；此处不将本地改版验证视为已上线。
+Auralis 公网发布已验证：[Vercel 生产地址](https://singing-key-practice.vercel.app/) 对应 `main` 提交 `8d83dd2981c925e6f796904f210702972ef0183b`；[Vercel 部署](https://vercel.com/ruoyu3/singing-key-practice/3JCKmB8rAkyeW3yy7M7CTsAUWxMw) 状态为 Ready，GitHub 的 Vercel 提交检查为 success。首页标题为 `Auralis · Vocal Practice Studio`，加载 `index-CZLW8eWk.js` 与 `index-DS6Ncxmv.css`。首页、这两项资源、应用图标、两项 SVG 标志、网页清单、Space Grotesk 字体、OFL 文本与第三方许可证页均匿名返回 HTTP 200，并逐项通过 SHA-256 核对，与本地 `dist/` 完全一致。[GitHub Pages 构建部署](https://github.com/Ruoyu-Tianyi/singing-key-practice/actions/runs/39960223267) 同样完成且结果为 success。公网资源检查不包含实体设备麦克风或真人演唱验证。
+
+Auralis 公网浏览器复验：新版标题、深色主题、Logo 和字体正常加载；模唱模式的 A4 显示 440.00 Hz，390px 布局无横向溢出，曲线放大与 Escape 还原可用，控制台无错误。1440px 桌面截图已留存。
 
 Auralis 品牌与交互检查：页面采用深夜蓝、冰青与柔紫配色，英文标题搭配中文操作；应用图标和页面标志为原生 SVG，英文 Space Grotesk 字体及其 OFL 许可随站点自托管。样式提供减少动态效果支持，实时读数在值不变时保留对应 DOM 节点。改名保留原有浏览器存储键、仓库和访问域名；这些检查不包含实体设备麦克风或真人演唱验证。
 
