@@ -33,7 +33,7 @@ Python 的两项单元测试没有调用真实 Audiveris；另已实际运行官
 | 真人独唱与扬声器播放 | 待实体设备实测 | 音名/频率/音分随人声变化；钢琴风格与手风琴风格可听，佩戴耳机后跟唱反馈合理。 |
 | 简谱图片/PDF OCR | 浏览器验证通过 | 实际上传 PNG 与 PDF 样本，下载识别模型、生成草稿、修正延长线、导入 7 个音符并逐音校对。原始 OCR 漏掉延长线，不能免人工确认。 |
 | Audiveris 五线谱识别 | 本机已准备便携环境，端到端验证通过 | 官方 cucaracha.png 经本地接口返回 MusicXML，网页显示「29 - LA CUCARACHA」、3/4、68 个音符，可进入校对与练习。官方程序、Java 和 OCR 模型位于忽略的 .tools，不随源码提交。 |
-| HTTPS 静态部署 | 上轮紧凑布局与收音设置已发布，本轮实时预览待部署 | 上轮 Vercel `main` 的 `c09a072` 状态为 Ready，GitHub Pages 构建部署成功；本轮设置内实时预览暂只记录本地验证，不据此宣称已经上线。 |
+| HTTPS 静态部署 | 本轮设置内实时预览已发布并验证 | 源码提交 `0ddee6b` 的 Vercel 部署为 Ready，GitHub Pages 构建部署成功；公开入口加载新资源，Vercel 首页及资源逐项 SHA-256 与本地构建一致。公网 390×844 界面复验通过，实体麦克风仍未实测。 |
 
 公网版本额外验证：MIDI 文件成功导入为 4 个旋律音符；PNG 简谱 OCR 成功生成可编辑草稿，浏览器未记录错误。本地开发服务额外验证：PDF 简谱识别、修正延长线、逐音编辑与手机设置入口已通过。
 
@@ -44,6 +44,10 @@ Python 的两项单元测试没有调用真实 Audiveris；另已实际运行官
 本轮预览实现检查：`AudioEngine.setMicrophonePreview` / `clearMicrophonePreview` 复用既有 `MediaStreamSource`，不额外请求麦克风权限，不连接扬声器。面板固定展示原始 RMS 换算的 dBFS、增益后对数音量条与同尺度门限线、音名/Hz/相对最近标准音的音分，以及 5 秒自适应迷你曲线；参数列表单独滚动。关闭时解除预览分析器并清空预览帧：打开前已监听则保留正式监听，面板内新开的监听则在关闭或保存时停止，待授权时关闭会取消并清理迟到结果。面板打开期间主绘图循环只绘制预览，正式音频回调与评分继续按已保存参数运行。
 
 收音设置的说明已与实际参数核对：增益仅用于本机数字分析，不改变物理麦克风增益，也不将人声连接到扬声器；音量门限、频率上下限及可信度用于过滤估计。检测更新次数是目标上限，音频处理采样率只读；分析窗口时长为采样数除以采样率，不能视为端到端延迟保证，调整窗口后可能需要重调跟唱延迟。[MDN：sampleRate](https://developer.mozilla.org/en-US/docs/Web/API/BaseAudioContext/sampleRate)、[requestAnimationFrame](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame)、[时域采样](https://developer.mozilla.org/en-US/docs/Web/API/AnalyserNode/getFloatTimeDomainData)、[fftSize](https://developer.mozilla.org/en-US/docs/Web/API/AnalyserNode/fftSize)、[Pitchy](https://github.com/ianprime0509/pitchy)
+
+本轮设置内实时预览的公网发布已验证：源码提交为 [`0ddee6b2576f5fc1ed698b4d8f444091e08c6154`](https://github.com/Ruoyu-Tianyi/singing-key-practice/commit/0ddee6b2576f5fc1ed698b4d8f444091e08c6154)，[Vercel 部署](https://vercel.com/ruoyu3/singing-key-practice/BnZ8rPrmxazwY9ZsVCNVTwWo2HsU) 状态为 Ready，GitHub 的 Vercel 提交检查为 success。[生产入口](https://singing-key-practice.vercel.app/) 加载 `index-CeF3A2Yc.js` 与 `index-DPK0KttK.css`；首页、这两项资源、应用图标、两项 SVG 标志、网页清单、Space Grotesk 字体、OFL 文本与第三方许可证页共 10 项均匿名返回 HTTP 200，逐项 SHA-256 与本地 `dist/` 完全一致。[GitHub Pages 构建部署](https://github.com/Ruoyu-Tianyi/singing-key-practice/actions/runs/39970505714) 对应同一源码提交，结果为 success；其公开首页返回 200 并加载相同的新 JS/CSS 文件。
+
+本轮公网浏览器复验在未开启实体麦克风的情况下完成：390×844 下新预览正常显示，选择“轻声练习”后，分析增益由 1× 变为 2×、门限由 0.008 变为 0.004，门限文字由 −41.9 变为 −48.0 dBFS，门限标记位于音量条的 33.3906%。预览区域 y=125.94–300.51，参数区 y=309.51–743.86，保存按钮 y=760.43–804.43，无横向溢出；参数区滚动至 `scrollTop=1357.71` 后，预览与保存按钮位置不变。关闭后重新打开，增益恢复 1×、门限恢复 0.008 / −41.9 dBFS，确认未保存草稿没有提交。浏览器警告和错误记录均为空，公网截图已留存且不随仓库分发。这些检查验证界面、门限换算、固定布局与取消行为，不代表真人演唱、实体麦克风信号或实际设备延迟已验证。
 
 此前紧凑布局与收音设置的公网发布已验证：[Vercel 生产地址](https://singing-key-practice.vercel.app/) 当时对应 `main` 提交 `c09a072f7f000eb24de8af8ea1e6398fe7c2b6e5`；[Vercel 部署](https://vercel.com/ruoyu3/singing-key-practice/76XGpbEJrkD6oS6yNWsV8NomSmFQ) 状态为 Ready，GitHub 的 Vercel 提交检查为 success。首页标题为 `Auralis · Vocal Practice Studio`，加载 `index-DvnoPcGU.js` 与 `index-CdG2CTy7.css`。首页、这两项资源、应用图标、页面 SVG 标志、网页清单、Space Grotesk 字体、OFL 文本与第三方许可证页均匿名返回 HTTP 200，并逐项通过 SHA-256 核对，与当时本地 `dist/` 完全一致。[GitHub Pages 构建部署](https://github.com/Ruoyu-Tianyi/singing-key-practice/actions/runs/39966105559) 同样完成且结果为 success；其公开首页返回 200，并加载相同的 JS/CSS 文件。公网资源检查不包含实体设备麦克风或真人演唱验证。
 
