@@ -2,7 +2,9 @@
 
 一个中文、开源的浏览器唱歌练习工具：听标准音、看自己的音高曲线，再按旋律练习音准与节奏。前端使用 TypeScript、Vite 和 Web Audio；日常练习无需账号或应用服务器。
 
-源码：[Ruoyu-Tianyi/singing-key-practice](https://github.com/Ruoyu-Tianyi/singing-key-practice)。原创代码使用 MIT 许可。
+**在线使用：[打开声准练习室](https://ruoyu-tianyi.github.io/singing-key-practice/)**
+
+源码：[Ruoyu-Tianyi/singing-key-practice](https://github.com/Ruoyu-Tianyi/singing-key-practice)。公开仓库，原创代码使用 MIT 许可。
 
 ![声准桌面界面](docs/preview-desktop.jpg)
 
@@ -60,7 +62,7 @@ python -m unittest discover -s server -p "test_*.py"
 | MIDI | 读取首个非打击乐、有音符的轨道；同起点和弦优先取高音，重叠音简化为单旋律。 |
 | JSON | 导入本工具导出的练习模板。适合在不同设备间手动传递曲谱。 |
 | 图片 / PDF 简谱 | Tesseract.js 本地文字识别；PDF 最多 10 页。先对照原谱修正文字，再确认导入。 |
-| 图片 / PDF 五线谱 | 需要另行安装 Audiveris 并启动 [可选识别服务](server/README.md)，默认没有安装或运行。 |
+| 图片 / PDF 五线谱 | 启动 [Audiveris 本地识别服务](server/README.md)后导入。当前工作区已准备便携环境并通过真实谱面验证；新克隆需要先安装/准备引擎。 |
 
 文件最大 20 MB，模板最多 10,000 个音符。反复记号按谱面顺序读一遍，整首使用统一速度；不会自动展开反复、还原完整乐队总谱或判断哪条声部是主唱。来源说明会提示简化。复杂曲谱优先从制谱软件导出 MusicXML，导入后仍应试听核对。
 
