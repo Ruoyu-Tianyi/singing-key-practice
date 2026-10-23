@@ -42,8 +42,6 @@ Python 的两项单元测试没有调用真实 Audiveris；另已实际运行官
 
 本轮紧凑布局与收音设置的公网发布已验证：[Vercel 生产地址](https://singing-key-practice.vercel.app/) 对应 `main` 提交 `c09a072f7f000eb24de8af8ea1e6398fe7c2b6e5`；[Vercel 部署](https://vercel.com/ruoyu3/singing-key-practice/76XGpbEJrkD6oS6yNWsV8NomSmFQ) 状态为 Ready，GitHub 的 Vercel 提交检查为 success。首页标题为 `Auralis · Vocal Practice Studio`，加载 `index-DvnoPcGU.js` 与 `index-CdG2CTy7.css`。首页、这两项资源、应用图标、页面 SVG 标志、网页清单、Space Grotesk 字体、OFL 文本与第三方许可证页均匿名返回 HTTP 200，并逐项通过 SHA-256 核对，与本地 `dist/` 完全一致。[GitHub Pages 构建部署](https://github.com/Ruoyu-Tianyi/singing-key-practice/actions/runs/39966105559) 同样完成且结果为 success；其公开首页返回 200，并加载相同的本轮 JS/CSS 文件。公网资源检查不包含实体设备麦克风或真人演唱验证。
 
-本轮公网浏览器复验：390×844 视口下无横向溢出，曲线画布位于 y=229–605，目标音区域 y=644–727，播放按钮 y=664–708，麦克风按钮 y=737–781。设置中可暂选偏高音域 130–2000 Hz、60 次/秒和 8192 个采样，窗口说明按 48,000 Hz 示例显示约 170.7 ms；底部保存操作止于 y=804，保持在视口内。取消并重开设置恢复已保存的 30 次/秒与 4096 个采样；曲谱示范可开始和停止。以上为浏览器界面验证，未验证实体手机收音与真实端到端延迟。
-
 本轮公网浏览器复验：390×844 视口无横向溢出，曲线位于约 y=229–605，目标音区域约 y=644–727，播放标准音按钮约 y=664–708，麦克风按钮约 y=737–781，均在首屏内。设置中可预览偏高音域 130–2000 Hz、60 次/秒与 8192 个采样窗口，对应说明显示 48,000 Hz 下约 170.7 ms 的示例跨度；保存按钮底部约 y=804，仍在视口内。取消后重新打开，检测频率和窗口恢复为已保存的 30 次/秒与 4096，曲谱示范可开始和停止，浏览器无错误。已保存公开网址截图；未进行实体手机麦克风实测。
 
 上一版 Auralis 公网浏览器复验：标题、深色主题、Logo 和字体正常加载；模唱模式的 A4 显示 440.00 Hz，390px 布局无横向溢出，曲线放大与 Escape 还原可用，控制台无错误。1440px 桌面截图已留存。
