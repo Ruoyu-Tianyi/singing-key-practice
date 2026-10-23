@@ -1086,6 +1086,99 @@ h1 em {
   font-size: 8px;
   color: #637f99;
 }
+.mic-calibration {
+  border-top: 1px solid #99b4cf1a;
+  padding-top: 7px;
+  margin-top: 5px;
+}
+.mic-calibration-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.mic-calibration-toolbar .button {
+  min-height: 44px;
+  padding: 8px 12px;
+  font-size: 11px;
+  gap: 6px;
+  color: #c7b8ec;
+  border-color: #b49be83d;
+  background: #a98ade0a;
+  flex-shrink: 0;
+}
+.mic-calibration-toolbar .button svg {
+  width: 13px;
+  height: 13px;
+}
+#mic-calibrate-step {
+  color: #8194af;
+  font-size: 10px;
+}
+.calibration-cancel {
+  margin-left: auto;
+  min-height: 44px;
+  padding: 8px 2px 8px 8px;
+  background: none;
+  border: 0;
+  color: #a5b6ca;
+  font-size: 11px;
+  cursor: pointer;
+}
+#mic-calibrate-status,
+#mic-calibrate-detail {
+  margin: 4px 0;
+  color: #9eb3ca;
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+#mic-calibrate-status.calibration-error {
+  color: #eac294;
+}
+#mic-calibrate-detail {
+  font-size: 10px;
+  color: #7f97b2;
+}
+#mic-calibrate-timing {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 7px 0;
+}
+#mic-calibrate-progress {
+  flex: 1;
+  min-width: 0;
+  height: 5px;
+  appearance: none;
+  border: 0;
+  border-radius: 4px;
+  background: #233149;
+  color: #b29cdd;
+}
+#mic-calibrate-progress::-webkit-progress-bar {
+  background: #233149;
+  border-radius: 4px;
+}
+#mic-calibrate-progress::-webkit-progress-value {
+  background: linear-gradient(90deg, #8c7ed4, #9fdae1);
+  border-radius: 4px;
+}
+#mic-calibrate-progress::-moz-progress-bar {
+  background: #b29cdd;
+  border-radius: 4px;
+}
+#mic-calibrate-countdown {
+  font-size: 10px;
+  color: #b3bdd8;
+  font-variant-numeric: tabular-nums;
+}
+#settings-dialog button:disabled,
+#settings-dialog input:disabled,
+#settings-dialog select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 .settings-body {
   min-height: 0;
   overflow-y: auto;
@@ -3465,6 +3558,22 @@ dialog > p,
     height: 69px;
   }
   #mic-preview-message {
+    font-size: 9px;
+  }
+  .mic-calibration-toolbar {
+    gap: 8px;
+  }
+  .mic-calibration-toolbar .button {
+    padding: 8px;
+    font-size: 10px;
+  }
+  #mic-calibrate-step {
+    font-size: 9px;
+  }
+  #mic-calibrate-status {
+    font-size: 10px;
+  }
+  #mic-calibrate-detail {
     font-size: 9px;
   }
 }

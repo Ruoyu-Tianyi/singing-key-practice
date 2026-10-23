@@ -145,6 +145,42 @@ function emitPreview(overrides: Partial<PitchFrame> = {}) {
   }
 }
 
+function calibrationTimeline(start = 300_000) {
+  let now = start;
+  const clock = vi.spyOn(performance, "now").mockReturnValue(now);
+  return {
+    feed(milliseconds: number, overrides: Partial<PitchFrame>) {
+      for (let elapsed = 0; elapsed < milliseconds; elapsed += 100) {
+        now += 100;
+        clock.mockReturnValue(now);
+        const onPreview = audio.setMicrophonePreview.mock.lastCall?.[1] as
+          | ((frame: PitchFrame) => void)
+          | undefined;
+        if (!onPreview)
+          throw new Error("Calibration preview was not registered");
+        onPreview({
+          frequency: 440,
+          midi: 69,
+          cents: 0,
+          clarity: 1,
+          rms: 0.02,
+          time: now / 1000,
+          ...overrides,
+        });
+        scheduledDraw(now);
+      }
+    },
+    advance(milliseconds: number) {
+      now += milliseconds;
+      clock.mockReturnValue(now);
+      scheduledDraw(now);
+    },
+    restore() {
+      clock.mockRestore();
+    },
+  };
+}
+
 function pendingPermission() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => {
@@ -1028,5 +1064,253 @@ describe("practice room integration", () => {
     await click('[data-action="settings"]');
     expect(text("#mic-preview-note")).toBe("—");
     expect(audio.startMicrophone).toHaveBeenCalledOnce();
+  });
+
+  it("calibrates in two user-started phases and saves only after manual fine tuning", async () => {
+    const timeline = calibrationTimeline();
+    try {
+      await click('[data-action="settings"]');
+      const saved = localStorage.getItem("shengzhun-settings");
+      const save = element<HTMLButtonElement>('[data-action="save-settings"]');
+      const gain = element<HTMLInputElement>("#mic-gain");
+      await click("#mic-calibrate-button");
+      expect(audio.startMicrophone).toHaveBeenCalledOnce();
+      expect(element("#mic-calibrate-status").getAttribute("role")).toBe(
+        "status",
+      );
+      expect(element("#mic-calibrate-cancel").hidden).toBe(false);
+      expect(gain.matches(":disabled")).toBe(true);
+      expect(save.disabled).toBe(true);
+      timeline.feed(4000, {
+        rms: 0.001,
+        frequency: null,
+        midi: null,
+        cents: null,
+        clarity: 0,
+      });
+      expect(text("#mic-calibrate-button")).toContain("开始试唱");
+      const beforeVoice = Number(gain.value);
+      timeline.advance(1000);
+      expect(text("#mic-calibrate-button")).toContain("开始试唱");
+      expect(Number(gain.value)).toBe(beforeVoice);
+      await click("#mic-calibrate-button");
+      timeline.feed(6000, { rms: 0.02 });
+      const recommendedGain = Number(gain.value);
+      const recommendedGate = Number(
+        element<HTMLInputElement>("#mic-gate").value,
+      );
+      expect(recommendedGain).toBeGreaterThan(1);
+      expect(recommendedGate).toBeGreaterThan(0.001 * recommendedGain);
+      expect(recommendedGate).toBeLessThanOrEqual(0.02 * recommendedGain);
+      expect(gain.matches(":disabled")).toBe(false);
+      expect(save.disabled).toBe(false);
+      expect(audio.setMicrophonePreview.mock.lastCall?.[0]).toEqual({
+        ...DEFAULT_MICROPHONE_SETTINGS,
+        inputGain: recommendedGain,
+        noiseThreshold: recommendedGate,
+      });
+      expect(audio.configureMicrophone).not.toHaveBeenCalled();
+      expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+      gain.value = "1.7";
+      gain.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(audio.setMicrophonePreview.mock.lastCall?.[0].inputGain).toBe(1.7);
+      await click('[data-action="save-settings"]');
+      expect(audio.configureMicrophone).toHaveBeenLastCalledWith({
+        ...DEFAULT_MICROPHONE_SETTINGS,
+        inputGain: 1.7,
+        noiseThreshold: recommendedGate,
+      });
+      expect(
+        JSON.parse(localStorage.getItem("shengzhun-settings")!).microphone
+          .inputGain,
+      ).toBe(1.7);
+    } finally {
+      element<HTMLDialogElement>("#settings-dialog").close();
+      timeline.restore();
+      await restorePracticeSettings();
+    }
+  });
+
+  it("cancels calibration without changing drafts or stopping a pre-existing microphone", async () => {
+    const timeline = calibrationTimeline(400_000);
+    try {
+      await click("#mic-button");
+      await click('[data-action="settings"]');
+      const draft = {
+        ...DEFAULT_MICROPHONE_SETTINGS,
+        inputGain: 1.5,
+        noiseThreshold: 0.014,
+      };
+      editMicrophoneSettings(draft);
+      const saved = localStorage.getItem("shengzhun-settings");
+      const stops = audio.stopMicrophone.mock.calls.length;
+      await click("#mic-calibrate-button");
+      expect(audio.startMicrophone).toHaveBeenCalledOnce();
+      timeline.feed(2000, {
+        rms: 0.001,
+        frequency: null,
+        midi: null,
+        cents: null,
+        clarity: 0,
+      });
+      await click("#mic-calibrate-cancel");
+      timeline.feed(10_000, { rms: 0.02 });
+      expect(Number(element<HTMLInputElement>("#mic-gain").value)).toBe(1.5);
+      expect(Number(element<HTMLInputElement>("#mic-gate").value)).toBe(0.014);
+      expect(element<HTMLInputElement>("#mic-gain").matches(":disabled")).toBe(
+        false,
+      );
+      expect(audio.configureMicrophone).not.toHaveBeenCalled();
+      expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+      await click("#settings-dialog [data-close]");
+      expect(audio.stopMicrophone).toHaveBeenCalledTimes(stops);
+      expect(text("#input-state")).toBe("已连接");
+    } finally {
+      element<HTMLDialogElement>("#settings-dialog").close();
+      pagehide(true);
+      timeline.restore();
+    }
+  });
+
+  it("rejects low signal separation without replacing the user's draft", async () => {
+    const timeline = calibrationTimeline(500_000);
+    try {
+      await click('[data-action="settings"]');
+      const draft = {
+        ...DEFAULT_MICROPHONE_SETTINGS,
+        inputGain: 1.5,
+        noiseThreshold: 0.014,
+      };
+      editMicrophoneSettings(draft);
+      const saved = localStorage.getItem("shengzhun-settings");
+      await click("#mic-calibrate-button");
+      timeline.feed(4000, {
+        rms: 0.01,
+        frequency: null,
+        midi: null,
+        cents: null,
+        clarity: 0,
+      });
+      expect(text("#mic-calibrate-button")).toContain("开始试唱");
+      await click("#mic-calibrate-button");
+      timeline.feed(6000, { rms: 0.02 });
+      expect(Number(element<HTMLInputElement>("#mic-gain").value)).toBe(1.5);
+      expect(Number(element<HTMLInputElement>("#mic-gate").value)).toBe(0.014);
+      expect(
+        element<HTMLButtonElement>('[data-action="save-settings"]').disabled,
+      ).toBe(false);
+      expect(element("#mic-calibrate-cancel").hidden).toBe(true);
+      expect(audio.configureMicrophone).not.toHaveBeenCalled();
+      expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+    } finally {
+      element<HTMLDialogElement>("#settings-dialog").close();
+      timeline.restore();
+    }
+  });
+
+  it.each(["close", "cancel"])(
+    "invalidates late microphone permission after calibration %s",
+    async (action) => {
+      const timeline = calibrationTimeline(600_000);
+      try {
+        await click('[data-action="settings"]');
+        const saved = localStorage.getItem("shengzhun-settings");
+        const grant = pendingPermission();
+        await click("#mic-calibrate-button");
+        expect(text("#mic-status")).toContain("正在申请权限");
+        await click(
+          action === "close"
+            ? "#settings-dialog [data-close]"
+            : "#mic-calibrate-cancel",
+        );
+        grant();
+        await settle();
+        timeline.feed(12_000, { rms: 0.02 });
+        expect(text("#input-state")).toBe("未连接");
+        expect(audio.configureMicrophone).not.toHaveBeenCalled();
+        expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+        expect(Number(element<HTMLInputElement>("#mic-gain").value)).toBe(1);
+        expect(Number(element<HTMLInputElement>("#mic-gate").value)).toBe(
+          0.008,
+        );
+        if (action === "cancel") {
+          expect(element<HTMLDialogElement>("#settings-dialog").open).toBe(
+            true,
+          );
+          expect(
+            element<HTMLButtonElement>('[data-action="save-settings"]')
+              .disabled,
+          ).toBe(false);
+        }
+      } finally {
+        element<HTMLDialogElement>("#settings-dialog").close();
+        timeline.restore();
+      }
+    },
+  );
+
+  it("discards a calibration with no usable voice samples", async () => {
+    const timeline = calibrationTimeline(700_000);
+    try {
+      await click('[data-action="settings"]');
+      const saved = localStorage.getItem("shengzhun-settings");
+      await click("#mic-calibrate-button");
+      timeline.feed(4000, {
+        rms: 0.001,
+        frequency: null,
+        midi: null,
+        cents: null,
+        clarity: 0,
+      });
+      await click("#mic-calibrate-button");
+      timeline.advance(6100);
+      expect(Number(element<HTMLInputElement>("#mic-gain").value)).toBe(1);
+      expect(Number(element<HTMLInputElement>("#mic-gate").value)).toBe(0.008);
+      expect(
+        element<HTMLButtonElement>('[data-action="save-settings"]').disabled,
+      ).toBe(false);
+      expect(element("#mic-calibrate-cancel").hidden).toBe(true);
+      expect(audio.configureMicrophone).not.toHaveBeenCalled();
+      expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+    } finally {
+      element<HTMLDialogElement>("#settings-dialog").close();
+      timeline.restore();
+    }
+  });
+
+  it("abandons calibration when the page enters the background", async () => {
+    const timeline = calibrationTimeline(800_000);
+    const hidden = Object.getOwnPropertyDescriptor(document, "hidden");
+    try {
+      await click('[data-action="settings"]');
+      const saved = localStorage.getItem("shengzhun-settings");
+      await click("#mic-calibrate-button");
+      timeline.feed(1000, {
+        rms: 0.001,
+        frequency: null,
+        midi: null,
+        cents: null,
+        clarity: 0,
+      });
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: true,
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+      timeline.feed(12_000, { rms: 0.02 });
+      expect(text("#input-state")).toBe("未连接");
+      expect(element("#mic-calibrate-cancel").hidden).toBe(true);
+      expect(
+        element<HTMLButtonElement>('[data-action="save-settings"]').disabled,
+      ).toBe(false);
+      expect(Number(element<HTMLInputElement>("#mic-gain").value)).toBe(1);
+      expect(audio.configureMicrophone).not.toHaveBeenCalled();
+      expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+    } finally {
+      if (hidden) Object.defineProperty(document, "hidden", hidden);
+      else Reflect.deleteProperty(document, "hidden");
+      element<HTMLDialogElement>("#settings-dialog").close();
+      timeline.restore();
+    }
   });
 });

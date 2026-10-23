@@ -1,5 +1,9 @@
 import "./style.css";
 import {
+  recommendMicrophoneSettings,
+  type CalibrationSample,
+} from "./microphone-calibration";
+import {
   amplitudeDb,
   formatAmplitude,
   meterPosition,
@@ -113,6 +117,23 @@ let previewOwnsMicrophone = false,
   previewReceivedAt = 0,
   lastPreviewPaint = -Infinity;
 let micError = "";
+type CalibrationPhase =
+  | "idle"
+  | "connecting"
+  | "noise"
+  | "ready"
+  | "voice"
+  | "success"
+  | "error";
+let calibrationPhase: CalibrationPhase = "idle";
+let calibrationGeneration = 0;
+let calibrationStartedAt = 0;
+let calibrationFirstFrameAt = 0;
+let calibrationLastFrameAt = 0;
+let calibrationNoise: CalibrationSample[] = [];
+let calibrationVoice: CalibrationSample[] = [];
+let calibrationMessage = "先安静 4 秒，再自然试唱 6 秒。";
+let calibrationDetail = "";
 let inputLatencyMs = 100;
 const pitchViewport = new PitchViewport();
 type View = "tuner" | "match" | "songs";
@@ -215,6 +236,12 @@ app.innerHTML = `
     <div class="mic-preview-heading"><h3 id="mic-preview-title">实时收音预览 <span id="mic-preview-status">未开启</span></h3><button id="mic-preview-button" class="button secondary" data-action="preview-mic" aria-pressed="false">${i("mic")}开启收音</button></div>
     <div class="mic-preview-readouts"><div class="mic-preview-pitch"><strong id="mic-preview-note">—</strong><div><span id="mic-preview-frequency">等待你的声音</span><span id="mic-preview-cents">— 音分</span></div></div><div class="mic-preview-input"><div><span>分析音量</span><strong id="mic-preview-level">— dBFS</strong></div><div id="mic-preview-meter" class="mic-preview-meter" role="meter" aria-label="增益后的分析音量" aria-valuemin="-72" aria-valuemax="0" aria-valuenow="-72" aria-describedby="mic-preview-help"><span id="mic-preview-fill"></span><b id="mic-preview-gate-marker"></b></div><small id="mic-preview-raw">原始 — · 门限 —</small></div></div>
     <div class="mic-preview-chart"><canvas id="mic-preview-canvas" role="img" aria-label="最近五秒的预览音高曲线，音域自动适应声音"></canvas><span id="mic-preview-message">开启收音，边唱边调</span><small>5s</small></div>
+    <div class="mic-calibration" aria-label="自动收音校准">
+      <div class="mic-calibration-toolbar"><button id="mic-calibrate-button" class="button secondary" data-action="calibrate-mic">${i("sparkles")}自动校准</button><span id="mic-calibrate-step">环境 → 试唱 → 微调</span><button id="mic-calibrate-cancel" class="calibration-cancel" data-action="cancel-calibration" hidden>取消校准</button></div>
+      <p id="mic-calibrate-status" role="status">先安静 4 秒，再自然试唱 6 秒。</p>
+      <div id="mic-calibrate-timing" hidden><progress id="mic-calibrate-progress" max="100" value="0" aria-label="当前校准步骤进度"></progress><span id="mic-calibrate-countdown" aria-hidden="true"></span></div>
+      <p id="mic-calibrate-detail" hidden></p>
+    </div>
   </section>
   <div class="settings-body">
   <p class="settings-intro">收音参数立即预览，保存后用于练习；关闭将放弃未保存的改动。</p>
@@ -403,8 +430,19 @@ function resetPreviewFrames() {
 }
 function receivePreviewFrame(next: PitchFrame) {
   if (!settingsDialog.open || !mic) return;
+  const now = performance.now();
+  advanceCalibration(now);
+  if (calibrationPhase === "noise" || calibrationPhase === "voice") {
+    if (!calibrationFirstFrameAt) calibrationFirstFrameAt = now;
+    calibrationLastFrameAt = now;
+    (calibrationPhase === "noise" ? calibrationNoise : calibrationVoice).push({
+      rms: next.rms,
+      clarity: next.clarity,
+      frequency: next.frequency,
+    });
+  }
   previewFrame = next;
-  previewReceivedAt = performance.now();
+  previewReceivedAt = now;
   previewSamples.push({ t: previewReceivedAt, midi: next.midi });
   while (
     previewSamples.length &&
@@ -418,11 +456,25 @@ function updateMicrophonePreview() {
   previewInvalid = draft === null;
   if (draft) {
     previewSettings = draft;
-    engine.setMicrophonePreview(draft, receivePreviewFrame);
+    // Calibration reads raw RMS independently of the current gate. The normal
+    // preview still displays the draft gain; no practice settings are changed.
+    const analysis = calibrationIsActive()
+      ? {
+          ...draft,
+          inputGain: 4,
+          noiseThreshold: 0.001,
+          clarityThreshold: 0.6,
+          updateRateHz: 30 as const,
+          fftSize: 4096 as const,
+        }
+      : draft;
+    engine.setMicrophonePreview(analysis, receivePreviewFrame);
   }
+  updateCalibrationUI();
   renderMicrophonePreview(performance.now(), true);
 }
 function closeMicrophonePreview() {
+  cancelCalibration();
   engine.clearMicrophonePreview();
   const stopOwned = previewOwnsMicrophone;
   previewOwnsMicrophone = false;
@@ -432,9 +484,187 @@ function closeMicrophonePreview() {
 }
 settingsDialog.addEventListener("close", closeMicrophonePreview);
 
+function calibrationIsActive() {
+  return ["connecting", "noise", "ready", "voice"].includes(calibrationPhase);
+}
+function updateCalibrationUI(now = performance.now()) {
+  const active = calibrationIsActive();
+  const measuring =
+    calibrationPhase === "noise" || calibrationPhase === "voice";
+  const button = $<HTMLButtonElement>("mic-calibrate-button");
+  const label =
+    calibrationPhase === "ready"
+      ? "开始试唱"
+      : calibrationPhase === "noise"
+        ? "测量环境中"
+        : calibrationPhase === "voice"
+          ? "试唱采样中"
+          : calibrationPhase === "connecting"
+            ? "连接麦克风"
+            : calibrationPhase === "success" || calibrationPhase === "error"
+              ? "重新校准"
+              : "自动校准";
+  if (button.textContent !== label) {
+    button.innerHTML =
+      i(calibrationPhase === "ready" ? "mic" : "sparkles") + label;
+    refreshIcons();
+  }
+  button.disabled =
+    measuring || calibrationPhase === "connecting" || (micBusy && !active);
+  $("mic-calibrate-cancel").hidden = !active;
+  $("mic-calibrate-step").hidden = active;
+  setText("mic-calibrate-status", calibrationMessage);
+  $("mic-calibrate-status").classList.toggle(
+    "calibration-error",
+    calibrationPhase === "error",
+  );
+  $("mic-calibrate-detail").hidden = !calibrationDetail;
+  setText("mic-calibrate-detail", calibrationDetail);
+  $("mic-calibrate-timing").hidden = !measuring;
+  if (measuring) {
+    const duration = calibrationPhase === "noise" ? 4000 : 6000;
+    const elapsed = Math.max(0, now - calibrationStartedAt);
+    $<HTMLProgressElement>("mic-calibrate-progress").value = Math.min(
+      100,
+      (elapsed / duration) * 100,
+    );
+    setText(
+      "mic-calibrate-countdown",
+      `${Math.max(0, Math.ceil((duration - elapsed) / 1000))} 秒`,
+    );
+  }
+  settingsDialog
+    .querySelectorAll<
+      HTMLInputElement | HTMLSelectElement | HTMLButtonElement
+    >('.settings-body input, .settings-body select, .mic-presets button, [data-action="reset-mic-settings"], [data-action="save-settings"]')
+    .forEach((input) => {
+      input.disabled = active;
+    });
+}
+function resetCalibrationWindow() {
+  calibrationStartedAt = performance.now();
+  calibrationFirstFrameAt = calibrationLastFrameAt = 0;
+}
+function markCalibrationManual() {
+  if (calibrationPhase === "success") {
+    calibrationMessage = "当前参数已手动调整，正在实时预览。满意后保存。";
+  }
+}
+function cancelCalibration(
+  message = "先安静 4 秒，再自然试唱 6 秒。",
+  cancelPending = true,
+) {
+  const pendingOwned =
+    cancelPending &&
+    calibrationPhase === "connecting" &&
+    previewOwnsMicrophone &&
+    micBusy;
+  ++calibrationGeneration;
+  calibrationPhase = "idle";
+  calibrationNoise = [];
+  calibrationVoice = [];
+  calibrationMessage = message;
+  calibrationDetail = "";
+  if (pendingOwned) {
+    previewOwnsMicrophone = false;
+    stopMic();
+  }
+  if (settingsDialog.open) updateMicrophonePreview();
+  else updateCalibrationUI();
+}
+function failCalibration(reason: string) {
+  ++calibrationGeneration;
+  calibrationPhase = "error";
+  calibrationNoise = [];
+  calibrationVoice = [];
+  calibrationMessage = reason;
+  calibrationDetail =
+    "参数未改动。调整环境或麦克风距离后可重试，也可手动微调。";
+  updateMicrophonePreview();
+}
+async function startCalibration() {
+  if (!settingsDialog.open) return;
+  if (calibrationPhase === "ready") {
+    calibrationPhase = "voice";
+    calibrationVoice = [];
+    calibrationMessage = "用平时练习的音量，持续唱一个舒服的「啊」。";
+    resetCalibrationWindow();
+    updateCalibrationUI();
+    return;
+  }
+  if (calibrationIsActive() || micBusy || !readMicrophoneSettings()) return;
+  const generation = ++calibrationGeneration;
+  calibrationPhase = "connecting";
+  calibrationNoise = [];
+  calibrationVoice = [];
+  calibrationMessage = mic
+    ? "准备测量环境，请保持安静。"
+    : "请允许麦克风访问，连接后开始测量环境。";
+  calibrationDetail = "校准只推荐灵敏度和门限；完成后可微调，保存才用于练习。";
+  stopSong();
+  updateMicrophonePreview();
+  if (!mic) {
+    previewOwnsMicrophone = true;
+    await toggleMic();
+  }
+  if (generation !== calibrationGeneration || !settingsDialog.open) return;
+  if (!mic) {
+    failCalibration(micError || "无法开始收音，请检查麦克风后重试。");
+    return;
+  }
+  calibrationPhase = "noise";
+  calibrationMessage = "第一步 · 保持安静，正在测量环境噪声。";
+  resetCalibrationWindow();
+  updateMicrophonePreview();
+}
+function advanceCalibration(now: number) {
+  if (calibrationPhase !== "noise" && calibrationPhase !== "voice") return;
+  const duration = calibrationPhase === "noise" ? 4000 : 6000;
+  if (now - calibrationStartedAt < duration) return;
+  if (
+    !mic ||
+    !calibrationFirstFrameAt ||
+    now - calibrationLastFrameAt > 500 ||
+    calibrationLastFrameAt - calibrationFirstFrameAt < duration * 0.6
+  ) {
+    failCalibration("收音采样不连续，请保持页面在前台后重试。");
+    return;
+  }
+  if (calibrationPhase === "noise") {
+    if (calibrationNoise.length < 20) {
+      failCalibration("环境采样不足，请确认麦克风正常收音后重试。");
+      return;
+    }
+    calibrationPhase = "ready";
+    calibrationMessage = "环境采样完成。准备好后，点击「开始试唱」。";
+    updateCalibrationUI(now);
+    return;
+  }
+  const result = recommendMicrophoneSettings(
+    calibrationNoise,
+    calibrationVoice,
+  );
+  calibrationNoise = [];
+  calibrationVoice = [];
+  if (!result.success) {
+    failCalibration(result.reason);
+    return;
+  }
+  calibrationPhase = "success";
+  calibrationMessage = `推荐 ${result.settings.inputGain.toFixed(1)}× · 门限 ${result.settings.noiseThreshold.toFixed(3)}，已用于预览。`;
+  calibrationDetail = `环境 ${formatAmplitude(result.noiseRms)} · 试唱 ${formatAmplitude(result.voiceRms)}。可继续手动微调，满意后保存。`;
+  $<HTMLInputElement>("mic-gain").value = String(result.settings.inputGain);
+  $<HTMLInputElement>("mic-gate").value = String(
+    result.settings.noiseThreshold,
+  );
+  resetPreviewFrames();
+  updateMicrophoneDescriptions();
+}
+
 function renderMicrophonePreview(now: number, force = false) {
   if (!settingsDialog.open || (!force && now - lastPreviewPaint < 50)) return;
   lastPreviewPaint = now;
+  updateCalibrationUI(now);
   const fresh = mic && previewFrame !== null && now - previewReceivedAt <= 350;
   const raw =
     fresh && Number.isFinite(previewFrame!.rms)
@@ -754,6 +984,9 @@ async function toggleMic() {
   }
 }
 function stopMic() {
+  if (calibrationIsActive()) {
+    cancelCalibration("收音已停止，校准已取消。原参数保留。", false);
+  }
   ++micGeneration;
   if (playing && practicing) stopSong();
   engine.stopMicrophone();
@@ -1223,6 +1456,7 @@ document.addEventListener("click", async (event) => {
       }
       break;
     case "settings":
+      cancelCalibration();
       previewOwnsMicrophone = false;
       previewSettings = { ...microphoneSettings };
       previewInvalid = false;
@@ -1238,7 +1472,14 @@ document.addEventListener("click", async (event) => {
       await toggleMic();
       renderMicrophonePreview(performance.now(), true);
       break;
+    case "calibrate-mic":
+      await startCalibration();
+      break;
+    case "cancel-calibration":
+      cancelCalibration("校准已取消，原参数保留。可手动微调或重新校准。");
+      break;
     case "reset-mic-settings":
+      markCalibrationManual();
       fillMicrophoneSettings({ ...DEFAULT_MICROPHONE_SETTINGS });
       break;
     case "mic-preset": {
@@ -1253,6 +1494,7 @@ document.addEventListener("click", async (event) => {
       };
       const preset = presets[el.dataset.preset ?? ""];
       if (preset) {
+        markCalibrationManual();
         for (const [key, value] of Object.entries(preset)) {
           $<HTMLInputElement>(
             microphoneFields[key as keyof MicrophoneSettings],
@@ -1292,6 +1534,7 @@ document.addEventListener("click", async (event) => {
       }
       break;
     case "save-settings": {
+      if (calibrationIsActive()) break;
       const a4 = Number($<HTMLInputElement>("tuning").value),
         latency = Number($<HTMLInputElement>("latency").value);
       if (
@@ -1427,13 +1670,18 @@ $("volume").addEventListener("input", () => {
   $("volume-text").textContent = $<HTMLInputElement>("volume").value + "%";
 });
 for (const id of Object.values(microphoneFields)) {
-  $(id).addEventListener("input", updateMicrophoneDescriptions);
-  $(id).addEventListener("change", updateMicrophoneDescriptions);
+  const onInput = () => {
+    markCalibrationManual();
+    updateMicrophoneDescriptions();
+  };
+  $(id).addEventListener("input", onInput);
+  $(id).addEventListener("change", onInput);
 }
 $("mic-range-preset").addEventListener("change", () => {
   const range =
     frequencyPresets[$<HTMLSelectElement>("mic-range-preset").value];
   if (!range) return;
+  markCalibrationManual();
   $<HTMLInputElement>("mic-min-frequency").value = String(range[0]);
   $<HTMLInputElement>("mic-max-frequency").value = String(range[1]);
   updateMicrophoneDescriptions();
@@ -1521,6 +1769,7 @@ document.body.append(editDialog);
 let lastUI = 0;
 function draw(now: number) {
   if (settingsDialog.open) {
+    advanceCalibration(now);
     renderMicrophonePreview(now);
     requestAnimationFrame(draw);
     return;
