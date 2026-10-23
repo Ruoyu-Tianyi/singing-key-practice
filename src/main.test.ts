@@ -8,7 +8,11 @@ import {
   it,
   vi,
 } from "vitest";
-import type { PitchFrame } from "./audio";
+import {
+  DEFAULT_MICROPHONE_SETTINGS,
+  type MicrophoneSettings,
+  type PitchFrame,
+} from "./audio";
 
 const audio = vi.hoisted(() => ({
   startMicrophone: vi.fn(),
@@ -17,6 +21,7 @@ const audio = vi.hoisted(() => ({
   playNote: vi.fn(),
   stopPlayback: vi.fn(),
   close: vi.fn(),
+  configureMicrophone: vi.fn(),
 }));
 
 let scheduledDraw: FrameRequestCallback;
@@ -42,6 +47,23 @@ vi.mock("./audio", async (importOriginal) => {
     ...original,
     AudioEngine: class {
       a4 = 440;
+      private currentMicrophoneSettings = original.normalizeMicrophoneSettings(
+        original.DEFAULT_MICROPHONE_SETTINGS,
+      );
+      get microphoneSettings() {
+        return { ...this.currentMicrophoneSettings };
+      }
+      get microphoneSampleRate() {
+        return null;
+      }
+      configureMicrophone(options: unknown) {
+        audio.configureMicrophone(options);
+        this.currentMicrophoneSettings = original.normalizeMicrophoneSettings(
+          options,
+          this.currentMicrophoneSettings,
+        );
+        return { ...this.currentMicrophoneSettings };
+      }
       startMicrophone = audio.startMicrophone;
       stopMicrophone = audio.stopMicrophone;
       scheduleNotes = audio.scheduleNotes;
@@ -58,6 +80,32 @@ const element = <T extends HTMLElement = HTMLElement>(selector: string): T => {
   return result;
 };
 const text = (selector: string) => element(selector).textContent;
+
+const microphoneFields: Record<keyof MicrophoneSettings, string> = {
+  inputGain: "#mic-gain",
+  noiseThreshold: "#mic-gate",
+  minFrequency: "#mic-min-frequency",
+  maxFrequency: "#mic-max-frequency",
+  clarityThreshold: "#mic-clarity",
+  updateRateHz: "#mic-refresh",
+  fftSize: "#mic-window",
+};
+
+function editMicrophoneSettings(settings: Readonly<MicrophoneSettings>) {
+  for (const [key, selector] of Object.entries(microphoneFields)) {
+    const input = element<HTMLInputElement | HTMLSelectElement>(selector);
+    input.value = String(settings[key as keyof MicrophoneSettings]);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}
+
+async function restorePracticeSettings() {
+  await click('[data-action="settings"]');
+  editMicrophoneSettings(DEFAULT_MICROPHONE_SETTINGS);
+  element<HTMLInputElement>("#tuning").value = "440";
+  element<HTMLInputElement>("#latency").value = "100";
+  await click('[data-action="save-settings"]');
+}
 
 async function settle() {
   // DOM event handlers have nested awaits for audio permission and playback.
@@ -214,6 +262,8 @@ describe("practice room integration", () => {
       expect(current[0].classList.contains("active")).toBe(true);
       expect(element("#songs-card").hidden).toBe(mode !== "songs");
       expect(element("#keyboard-card").hidden).toBe(mode === "songs");
+      expect(element("#target-dock").hidden).toBe(mode === "songs");
+      expect(element("#song-practice-dock").hidden).toBe(mode !== "songs");
       expect(element(".brand").getAttribute("aria-label")).toBe("Auralis 首页");
     },
   );
@@ -276,6 +326,141 @@ describe("practice room integration", () => {
     }
   });
 
+  it("saves microphone settings with tuning and restores the saved values on reopening", async () => {
+    const settings: MicrophoneSettings = {
+      inputGain: 1.8,
+      noiseThreshold: 0.006,
+      minFrequency: 65,
+      maxFrequency: 1800,
+      clarityThreshold: 0.91,
+      updateRateHz: 20,
+      fftSize: 8192,
+    };
+    try {
+      await click('[data-action="settings"]');
+      editMicrophoneSettings(settings);
+      element<HTMLInputElement>("#tuning").value = "442";
+      element<HTMLInputElement>("#latency").value = "160";
+      await click('[data-action="save-settings"]');
+      expect(audio.configureMicrophone).toHaveBeenLastCalledWith(settings);
+      expect(element<HTMLDialogElement>("#settings-dialog").open).toBe(false);
+      expect(text("#a4-display")).toBe("442");
+      expect(JSON.parse(localStorage.getItem("shengzhun-settings")!)).toEqual({
+        a4: 442,
+        latency: 160,
+        microphone: settings,
+      });
+      await click('[data-action="settings"]');
+      for (const [key, selector] of Object.entries(microphoneFields)) {
+        expect(
+          element<HTMLInputElement | HTMLSelectElement>(selector).value,
+        ).toBe(String(settings[key as keyof MicrophoneSettings]));
+      }
+      expect(text("#mic-gain-value")).toBe("1.8×");
+      expect(text("#mic-clarity-value")).toBe("91%");
+    } finally {
+      await restorePracticeSettings();
+    }
+  });
+
+  it.each([
+    ["a reversed frequency range", "#mic-min-frequency", "400", "200"],
+    ["a missing lower frequency", "#mic-min-frequency", "", "2200"],
+    ["an out-of-range upper frequency", "#mic-max-frequency", "3001", "3001"],
+  ])(
+    "rejects %s without changing saved or applied settings",
+    async (_name, selector, value, maximum) => {
+      await click('[data-action="settings"]');
+      const saved = localStorage.getItem("shengzhun-settings");
+      const tuning = text("#a4-display");
+      element<HTMLInputElement>(selector).value = value;
+      element<HTMLInputElement>("#mic-max-frequency").value = maximum;
+      element<HTMLInputElement>("#tuning").value = "443";
+      await click('[data-action="save-settings"]');
+      expect(element<HTMLDialogElement>("#settings-dialog").open).toBe(true);
+      expect(element("#settings-error").hidden).toBe(false);
+      expect(text("#settings-error")).not.toBe("");
+      expect(audio.configureMicrophone).not.toHaveBeenCalled();
+      expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+      expect(text("#a4-display")).toBe(tuning);
+      await restorePracticeSettings();
+    },
+  );
+
+  it("previews microphone defaults without applying them until save", async () => {
+    const custom: MicrophoneSettings = {
+      ...DEFAULT_MICROPHONE_SETTINGS,
+      inputGain: 2,
+      noiseThreshold: 0.004,
+      updateRateHz: 20,
+    };
+    try {
+      await click('[data-action="settings"]');
+      editMicrophoneSettings(custom);
+      await click('[data-action="save-settings"]');
+      const saved = localStorage.getItem("shengzhun-settings");
+      audio.configureMicrophone.mockClear();
+      await click('[data-action="settings"]');
+      await click('[data-action="reset-mic-settings"]');
+      expect(audio.configureMicrophone).not.toHaveBeenCalled();
+      expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+      for (const [key, selector] of Object.entries(microphoneFields)) {
+        expect(
+          element<HTMLInputElement | HTMLSelectElement>(selector).value,
+        ).toBe(
+          String(DEFAULT_MICROPHONE_SETTINGS[key as keyof MicrophoneSettings]),
+        );
+      }
+      await click("#settings-dialog [data-close]");
+      await click('[data-action="settings"]');
+      expect(element<HTMLInputElement>("#mic-gain").value).toBe("2");
+      expect(element<HTMLInputElement>("#mic-gate").value).toBe("0.004");
+      await click('[data-action="reset-mic-settings"]');
+      await click('[data-action="save-settings"]');
+      expect(audio.configureMicrophone).toHaveBeenLastCalledWith(
+        DEFAULT_MICROPHONE_SETTINGS,
+      );
+      expect(
+        JSON.parse(localStorage.getItem("shengzhun-settings")!).microphone,
+      ).toEqual(DEFAULT_MICROPHONE_SETTINGS);
+    } finally {
+      await restorePracticeSettings();
+    }
+  });
+
+  it("previews scene and range presets while keeping them staged until save", async () => {
+    try {
+      await click('[data-action="settings"]');
+      const saved = localStorage.getItem("shengzhun-settings");
+      await click('[data-action="mic-preset"][data-preset="soft"]');
+      expect(element<HTMLInputElement>("#mic-gain").value).toBe("2");
+      expect(element<HTMLInputElement>("#mic-gate").value).toBe("0.004");
+      const range = element<HTMLSelectElement>("#mic-range-preset");
+      range.value = "low";
+      range.dispatchEvent(new Event("change", { bubbles: true }));
+      expect(element<HTMLInputElement>("#mic-min-frequency").value).toBe("65");
+      expect(element<HTMLInputElement>("#mic-max-frequency").value).toBe(
+        "1000",
+      );
+      expect(audio.configureMicrophone).not.toHaveBeenCalled();
+      expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+      const maximum = element<HTMLInputElement>("#mic-max-frequency");
+      maximum.value = "1200";
+      maximum.dispatchEvent(new Event("input", { bubbles: true }));
+      expect(range.value).toBe("custom");
+      await click('[data-action="save-settings"]');
+      expect(audio.configureMicrophone).toHaveBeenLastCalledWith({
+        ...DEFAULT_MICROPHONE_SETTINGS,
+        inputGain: 2,
+        noiseThreshold: 0.004,
+        minFrequency: 65,
+        maxFrequency: 1200,
+      });
+    } finally {
+      await restorePracticeSettings();
+    }
+  });
+
   it("draws both ends of a recent phrase spanning more than two octaves", async () => {
     await click("#mic-button");
     const onPitch = audio.startMicrophone.mock.lastCall![0] as (
@@ -335,6 +520,14 @@ describe("practice room integration", () => {
   it("restores the same chart after the expand button and native Escape cancel event", async () => {
     const card = element(".tuner-card");
     const canvas = element("#pitch-canvas");
+    const controls = [
+      element("#target-note"),
+      element("#target-frequency"),
+      element("#reference-button"),
+      element("#score-select"),
+      element("#listen-button"),
+      element("#practice-button"),
+    ];
     const dialog = element<HTMLDialogElement>("#chart-focus-dialog");
     await click("#chart-expand-button");
     expect(dialog.open).toBe(true);
@@ -343,6 +536,7 @@ describe("practice room integration", () => {
       "true",
     );
     expect(element("#pitch-canvas")).toBe(canvas);
+    controls.forEach((control) => expect(card.contains(control)).toBe(true));
     await click("#chart-expand-button");
     expect(dialog.open).toBe(false);
     expect(card.parentElement).toBe(element(".workspace"));
@@ -356,10 +550,47 @@ describe("practice room integration", () => {
     expect(dialog.open).toBe(false);
     expect(card.parentElement).toBe(element(".workspace"));
     expect(element("#pitch-canvas")).toBe(canvas);
+    controls.forEach((control) => {
+      expect(card.contains(control)).toBe(true);
+      expect(document.querySelectorAll(`#${control.id}`)).toHaveLength(1);
+      expect(element(`#${control.id}`)).toBe(control);
+    });
     expect(element("#chart-expand-button").getAttribute("aria-pressed")).toBe(
       "false",
     );
     expect(document.activeElement).toBe(element("#chart-expand-button"));
+  });
+
+  it("keeps shared reference and song transport controls beside the chart", async () => {
+    const targetDock = element("#target-dock");
+    for (const selector of [
+      ".target-selector",
+      "#target-frequency",
+      "#reference-button",
+    ]) {
+      expect(targetDock.contains(element(selector))).toBe(true);
+      expect(document.querySelectorAll(selector)).toHaveLength(1);
+    }
+    const frequency = text("#target-frequency");
+    await click('[data-action="target-up"]');
+    expect(text("#target-frequency")).not.toBe(frequency);
+    await click('[data-action="target-down"]');
+    expect(text("#target-frequency")).toBe(frequency);
+    await click("#reference-button");
+    expect(audio.playNote).toHaveBeenCalledOnce();
+    await click('[data-view="songs"]');
+    const songDock = element("#song-practice-dock");
+    for (const selector of [
+      ".score-controls",
+      "#listen-button",
+      "#practice-button",
+      "#song-feedback",
+    ]) {
+      expect(songDock.contains(element(selector))).toBe(true);
+      expect(document.querySelectorAll(selector)).toHaveLength(1);
+    }
+    expect(element("#songs-card").contains(element("#range-start"))).toBe(true);
+    expect(element("#songs-card").contains(element("#score-notes"))).toBe(true);
   });
 
   it("keeps the microphone disconnected when permission resolves after cancellation", async () => {
@@ -510,6 +741,67 @@ describe("practice room integration", () => {
     expect(values[0]).toBe("100%");
     expect(values[2]).toBe("50 ms");
     expect(text("#practice-button")).toContain("开始练习");
+  });
+
+  it("keeps rejected tuning and latency drafts out of scoring and restores saved values on reopen", async () => {
+    try {
+      await click('[data-action="settings"]');
+      element<HTMLInputElement>("#tuning").value = "442";
+      element<HTMLInputElement>("#latency").value = "150";
+      await click('[data-action="save-settings"]');
+      const saved = localStorage.getItem("shengzhun-settings");
+      await click('[data-action="settings"]');
+      element<HTMLInputElement>("#tuning").value = "449";
+      element<HTMLInputElement>("#latency").value = "400";
+      element<HTMLInputElement>("#mic-min-frequency").value = "400";
+      element<HTMLInputElement>("#mic-max-frequency").value = "200";
+      await click('[data-action="save-settings"]');
+      expect(element<HTMLDialogElement>("#settings-dialog").open).toBe(true);
+      expect(text("#a4-display")).toBe("442");
+      expect(localStorage.getItem("shengzhun-settings")).toBe(saved);
+      await click("#settings-dialog [data-close]");
+      await saveMelody("取消延迟草稿回归", "1 2");
+      element<HTMLInputElement>("#bpm").value = "60";
+      await click("#practice-button");
+      const scheduled = callbacks();
+      const onPitch = audio.startMicrophone.mock.lastCall![0] as (
+        frame: PitchFrame,
+      ) => void;
+      scheduled.onTimeline(1000);
+      for (const [midi, milliseconds] of [
+        [60, 1150],
+        [60, 1250],
+        [62, 2150],
+      ]) {
+        onPitch({
+          frequency: 442 * 2 ** ((midi - 69) / 12),
+          midi,
+          cents: 0,
+          clarity: 1,
+          rms: 0.2,
+          time: milliseconds / 1000,
+        });
+      }
+      scheduled.onComplete();
+      await vi.advanceTimersByTimeAsync(149);
+      expect(element("#practice-result").hidden).toBe(true);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(element("#practice-result").hidden).toBe(false);
+      const values = [
+        ...element("#practice-result").querySelectorAll("strong"),
+      ].map((node) => node.textContent);
+      expect(values[0]).toBe("100%");
+      expect(values[2]).toBe("0 ms");
+      await click('[data-action="settings"]');
+      expect(element<HTMLInputElement>("#tuning").value).toBe("442");
+      expect(element<HTMLInputElement>("#latency").value).toBe("150");
+      expect(element<HTMLInputElement>("#mic-min-frequency").value).toBe("50");
+      expect(element<HTMLInputElement>("#mic-max-frequency").value).toBe(
+        "2200",
+      );
+    } finally {
+      await restorePracticeSettings();
+    }
   });
 
   it("keeps unchanged live readout nodes stable while updating changed pitches", async () => {

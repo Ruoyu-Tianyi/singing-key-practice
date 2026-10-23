@@ -1,4 +1,15 @@
 import { PitchDetector } from "pitchy";
+import {
+  DEFAULT_MICROPHONE_SETTINGS,
+  normalizeMicrophoneSettings,
+  type MicrophoneSettings,
+} from "./microphone-settings";
+
+export {
+  DEFAULT_MICROPHONE_SETTINGS,
+  normalizeMicrophoneSettings,
+  type MicrophoneSettings,
+} from "./microphone-settings";
 
 export type Instrument = "piano" | "accordion";
 
@@ -22,6 +33,13 @@ interface Voice {
   oscillators: OscillatorNode[];
   nodes: AudioNode[];
   envelope: GainNode;
+}
+
+interface MicrophoneAnalysis {
+  samples: Float32Array<ArrayBuffer>;
+  amplifiedSamples: Float32Array<ArrayBuffer>;
+  detector: Detector;
+  nextFrameTime: number;
 }
 
 const NOTE_NAMES = [
@@ -71,6 +89,8 @@ export function detectPitchFrame(
   a4 = 440,
   time = 0,
   detector?: Detector,
+  settings: Readonly<MicrophoneSettings> = DEFAULT_MICROPHONE_SETTINGS,
+  amplifiedSamples?: Float32Array,
 ): PitchFrame {
   let energy = 0;
   for (const sample of samples) energy += sample * sample;
@@ -85,21 +105,37 @@ export function detectPitchFrame(
   };
   if (
     !Number.isFinite(rms) ||
-    rms < 0.008 ||
+    rms * settings.inputGain < settings.noiseThreshold ||
     !Number.isFinite(sampleRate) ||
     sampleRate <= 0
   ) {
     return empty;
   }
-  const [frequency, clarity] = (
-    detector ?? PitchDetector.forFloat32Array(samples.length)
-  ).findPitch(samples, sampleRate);
+  let analysisInput = samples;
+  if (settings.inputGain !== 1) {
+    analysisInput =
+      amplifiedSamples?.length === samples.length
+        ? amplifiedSamples
+        : new Float32Array(samples.length);
+    for (let index = 0; index < samples.length; index += 1) {
+      // Do not clip: linear gain must preserve waveform shape and pitch.
+      analysisInput[index] = samples[index] * settings.inputGain;
+    }
+  }
+  const pitchDetector =
+    detector ?? PitchDetector.forFloat32Array(samples.length);
+  // Our explicit amplified-RMS gate is authoritative, even for quiet inputs.
+  pitchDetector.minVolumeAbsolute = 0;
+  const [frequency, clarity] = pitchDetector.findPitch(
+    analysisInput,
+    sampleRate,
+  );
   if (
     !Number.isFinite(frequency) ||
     !Number.isFinite(clarity) ||
-    frequency < 50 ||
-    frequency > 2200 ||
-    clarity < 0.87
+    frequency < settings.minFrequency ||
+    frequency > settings.maxFrequency ||
+    clarity < settings.clarityThreshold
   ) {
     return { ...empty, clarity: Number.isFinite(clarity) ? clarity : 0 };
   }
@@ -152,12 +188,53 @@ export class AudioEngine {
   private stream: MediaStream | null = null;
   private microphoneSource: MediaStreamAudioSourceNode | null = null;
   private analyser: AnalyserNode | null = null;
+  private analysis: MicrophoneAnalysis | null = null;
+  private microphoneOptions = normalizeMicrophoneSettings();
   private animationFrame: number | null = null;
   private microphoneGeneration = 0;
   private playbackGeneration = 0;
   private timers = new Set<Timer>();
   private voices = new Set<Voice>();
   private destroyed = false;
+
+  get microphoneSettings(): Readonly<MicrophoneSettings> {
+    return { ...this.microphoneOptions };
+  }
+
+  /** Actual rate of the samples analyzed by Web Audio; null while disconnected. */
+  get microphoneSampleRate(): number | null {
+    return this.analyser ? (this.context?.sampleRate ?? null) : null;
+  }
+
+  /** Applies to an active stream without another device permission request. */
+  configureMicrophone(options: unknown): MicrophoneSettings {
+    const next = normalizeMicrophoneSettings(options, this.microphoneOptions);
+    if (this.analyser && next.fftSize !== this.microphoneOptions.fftSize) {
+      const analysis = this.createMicrophoneAnalysis(next.fftSize);
+      this.analyser.fftSize = next.fftSize;
+      this.analysis = analysis;
+    } else if (
+      this.analysis &&
+      next.updateRateHz !== this.microphoneOptions.updateRateHz
+    ) {
+      this.analysis.nextFrameTime = -Infinity;
+    }
+    this.microphoneOptions = next;
+    return { ...next };
+  }
+
+  private createMicrophoneAnalysis(
+    fftSize: MicrophoneSettings["fftSize"],
+  ): MicrophoneAnalysis {
+    const detector = PitchDetector.forFloat32Array(fftSize);
+    detector.minVolumeAbsolute = 0;
+    return {
+      samples: new Float32Array(fftSize),
+      amplifiedSamples: new Float32Array(fftSize),
+      detector,
+      nextFrameTime: -Infinity,
+    };
+  }
 
   private async getContext(): Promise<AudioContext> {
     if (this.destroyed) throw new Error("音频已关闭，请刷新页面后重试。");
@@ -227,28 +304,39 @@ export class AudioEngine {
       }
       this.stream = pendingStream;
       this.analyser = context.createAnalyser();
-      this.analyser.fftSize = 4096;
+      this.analyser.fftSize = this.microphoneOptions.fftSize;
       this.analyser.smoothingTimeConstant = 0;
       this.microphoneSource = context.createMediaStreamSource(pendingStream);
       this.microphoneSource.connect(this.analyser);
       // The analyser needs no destination connection; microphone audio is never monitored.
       const analyser = this.analyser;
-      const samples = new Float32Array(analyser.fftSize);
-      const detector = PitchDetector.forFloat32Array(samples.length);
-      let previousFrameTime = -Infinity;
+      this.analysis = this.createMicrophoneAnalysis(
+        this.microphoneOptions.fftSize,
+      );
       const tick = (timestamp: number) => {
         if (generation !== this.microphoneGeneration || this.destroyed) return;
         this.animationFrame = window.requestAnimationFrame(tick);
-        if (timestamp - previousFrameTime < 30) return;
-        previousFrameTime = timestamp;
-        analyser.getFloatTimeDomainData(samples);
+        const analysis = this.analysis;
+        if (!analysis || timestamp + 0.5 < analysis.nextFrameTime) return;
+        const interval = 1000 / this.microphoneOptions.updateRateHz;
+        // Keep a target clock with tolerance for rounded RAF timestamps. A slow
+        // frame never triggers multiple analyses or a backlog of catch-up work.
+        analysis.nextFrameTime = Number.isFinite(analysis.nextFrameTime)
+          ? analysis.nextFrameTime + interval
+          : timestamp + interval;
+        if (analysis.nextFrameTime <= timestamp + 0.5) {
+          analysis.nextFrameTime = timestamp + interval;
+        }
+        analyser.getFloatTimeDomainData(analysis.samples);
         onFrame(
           detectPitchFrame(
-            samples,
+            analysis.samples,
             context.sampleRate,
             this.a4,
             timestamp / 1000,
-            detector,
+            analysis.detector,
+            this.microphoneOptions,
+            analysis.amplifiedSamples,
           ),
         );
       };
@@ -272,6 +360,7 @@ export class AudioEngine {
     this.stream?.getTracks().forEach((track) => track.stop());
     this.microphoneSource = null;
     this.analyser = null;
+    this.analysis = null;
     this.stream = null;
   }
 

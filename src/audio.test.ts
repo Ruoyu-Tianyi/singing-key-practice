@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { PitchDetector } from "pitchy";
 import {
   AudioEngine,
+  DEFAULT_MICROPHONE_SETTINGS,
   detectPitchFrame,
   frequencyToMidi,
   midiToFrequency,
   noteLabel,
+  normalizeMicrophoneSettings,
 } from "./audio";
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -16,9 +20,10 @@ function signal(
   frequency: number,
   sampleRate = 48000,
   amplitude = 0.3,
+  length = 4096,
 ): Float32Array {
   return Float32Array.from(
-    { length: 4096 },
+    { length },
     (_, index) =>
       amplitude * Math.sin((2 * Math.PI * frequency * index) / sampleRate),
   );
@@ -104,6 +109,112 @@ describe("McLeod pitch analysis", () => {
     expect(detectPitchFrame(noise, 48000).frequency).toBeNull();
     expect(detectPitchFrame(signal(4000), 48000).frequency).toBeNull();
   });
+
+  it("amplifies quiet analysis without changing raw input RMS, waveform or frequency", () => {
+    const samples = signal(440, 48000, 0.004);
+    const original = samples.slice();
+    const ordinary = detectPitchFrame(samples, 48000);
+    const amplified = detectPitchFrame(
+      samples,
+      48000,
+      440,
+      0,
+      undefined,
+      normalizeMicrophoneSettings({ inputGain: 4 }),
+    );
+    expect(ordinary.frequency).toBeNull();
+    expect(amplified.frequency).toBeCloseTo(440, 0);
+    expect(amplified.rms).toBeCloseTo(ordinary.rms, 12);
+    expect(samples).toEqual(original);
+    // Lowering only the explicit gate must also allow a quiet, clear voice.
+    const sensitive = detectPitchFrame(
+      samples,
+      48000,
+      440,
+      0,
+      undefined,
+      normalizeMicrophoneSettings({ noiseThreshold: 0.001 }),
+    );
+    expect(sensitive.frequency).toBeCloseTo(440, 0);
+    const rejected = detectPitchFrame(
+      signal(440, 48000, 0.08),
+      48000,
+      440,
+      0,
+      undefined,
+      normalizeMicrophoneSettings({ inputGain: 0.5, noiseThreshold: 0.05 }),
+    );
+    expect(rejected.frequency).toBeNull();
+    expect(
+      detectPitchFrame(
+        signal(440, 48000, 0.8),
+        48000,
+        440,
+        0,
+        undefined,
+        normalizeMicrophoneSettings({ inputGain: 4 }),
+      ).frequency,
+    ).toBeCloseTo(440, 0);
+  });
+
+  it("uses the configured gate independently of any detector-level minimum volume", () => {
+    const samples = signal(440, 48000, 0.004);
+    const detector = PitchDetector.forFloat32Array(samples.length);
+    detector.minVolumeAbsolute = 0.5;
+    const frame = detectPitchFrame(
+      samples,
+      48000,
+      440,
+      0,
+      detector,
+      normalizeMicrophoneSettings({ noiseThreshold: 0.001 }),
+    );
+    expect(frame.frequency).toBeCloseTo(440, 0);
+  });
+
+  it("applies inclusive frequency/clarity boundaries and rejects values outside them", () => {
+    const detector = PitchDetector.forFloat32Array(4096);
+    const findPitch = vi.spyOn(detector, "findPitch");
+    const settings = normalizeMicrophoneSettings({
+      minFrequency: 130,
+      maxFrequency: 1000,
+      clarityThreshold: 0.9,
+    });
+    for (const [frequency, clarity, accepted] of [
+      [130, 0.9, true],
+      [1000, 0.9, true],
+      [129.99, 1, false],
+      [1000.01, 1, false],
+      [440, 0.8999, false],
+    ] as const) {
+      findPitch.mockReturnValue([frequency, clarity]);
+      const frame = detectPitchFrame(
+        signal(440),
+        48000,
+        440,
+        0,
+        detector,
+        settings,
+      );
+      expect(frame.frequency !== null).toBe(accepted);
+    }
+  });
+
+  it.each([2048, 4096, 8192] as const)(
+    "detects real synthetic signals using a %i-sample window",
+    (fftSize) => {
+      const settings = normalizeMicrophoneSettings({ fftSize, inputGain: 4 });
+      const frame = detectPitchFrame(
+        signal(220, 44100, 0.01, fftSize),
+        44100,
+        440,
+        0,
+        undefined,
+        settings,
+      );
+      expect(frame.frequency).toBeCloseTo(220, 0);
+    },
+  );
 });
 
 function mockAudioBrowser() {
@@ -155,15 +266,186 @@ function mockAudioBrowser() {
     }),
   };
   const requestAnimationFrame = vi.fn();
+  const cancelAnimationFrame = vi.fn();
   vi.stubGlobal("window", {
     AudioContext: vi.fn(function () {
       return context;
     }),
     requestAnimationFrame,
-    cancelAnimationFrame: vi.fn(),
+    cancelAnimationFrame,
   });
-  return { context, oscillators, requestAnimationFrame };
+  return { context, oscillators, requestAnimationFrame, cancelAnimationFrame };
 }
+
+function mockLiveMicrophone(frequency = 440, amplitude = 0.004) {
+  const browser = mockAudioBrowser();
+  let scheduled: FrameRequestCallback | null = null;
+  let frameId = 0;
+  browser.requestAnimationFrame.mockImplementation(
+    (callback: FrameRequestCallback) => {
+      scheduled = callback;
+      return ++frameId;
+    },
+  );
+  const analyser = {
+    fftSize: 4096,
+    smoothingTimeConstant: 0,
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    getFloatTimeDomainData: vi.fn((samples: Float32Array) => {
+      if (amplitude === 0) samples.fill(0);
+      else
+        samples.set(
+          signal(
+            frequency,
+            browser.context.sampleRate,
+            amplitude,
+            samples.length,
+          ),
+        );
+    }),
+  };
+  const source = { connect: vi.fn(), disconnect: vi.fn() };
+  Object.assign(browser.context, {
+    createAnalyser: vi.fn(() => analyser),
+    createMediaStreamSource: vi.fn(() => source),
+  });
+  const stopTrack = vi.fn();
+  const getUserMedia = vi
+    .fn()
+    .mockResolvedValue({ getTracks: () => [{ stop: stopTrack }] });
+  vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+  const step = (timestamp: number) => {
+    const callback = scheduled;
+    scheduled = null;
+    callback?.(timestamp);
+  };
+  return { ...browser, analyser, source, stopTrack, getUserMedia, step };
+}
+
+describe("live microphone configuration", () => {
+  it("applies gain, frequency and FFT changes without reconnecting or monitoring the microphone", async () => {
+    const browser = mockLiveMicrophone();
+    const detectorFactory = vi.spyOn(PitchDetector, "forFloat32Array");
+    const engine = new AudioEngine();
+    expect(engine.microphoneSampleRate).toBeNull();
+    const saved = engine.configureMicrophone({
+      inputGain: 4,
+      updateRateHz: 10,
+    });
+    saved.inputGain = 1;
+    expect(engine.microphoneSettings.inputGain).toBe(4);
+    Object.assign(engine.microphoneSettings, { inputGain: 1 });
+    expect(engine.microphoneSettings.inputGain).toBe(4);
+    const onFrame = vi.fn();
+    await engine.startMicrophone(onFrame);
+    expect(engine.microphoneSampleRate).toBe(48000);
+    browser.step(0);
+    const rawRms = onFrame.mock.lastCall![0].rms;
+    expect(onFrame.mock.lastCall![0].frequency).toBeCloseTo(440, 0);
+
+    engine.configureMicrophone({
+      minFrequency: 500,
+      maxFrequency: 1000,
+      fftSize: 8192,
+      updateRateHz: 60,
+    });
+    expect(browser.analyser.fftSize).toBe(8192);
+    expect(detectorFactory).toHaveBeenCalledWith(8192);
+    browser.step(1000 / 60);
+    expect(
+      browser.analyser.getFloatTimeDomainData.mock.lastCall![0],
+    ).toHaveLength(8192);
+    expect(onFrame.mock.lastCall![0].frequency).toBeNull();
+    engine.configureMicrophone({
+      minFrequency: 50,
+      maxFrequency: 2200,
+      inputGain: 1,
+    });
+    browser.step(2000 / 60);
+    expect(onFrame.mock.lastCall![0].frequency).toBeNull();
+    engine.configureMicrophone({ inputGain: 4, fftSize: 2048 });
+    browser.step(3000 / 60);
+    expect(
+      browser.analyser.getFloatTimeDomainData.mock.lastCall![0],
+    ).toHaveLength(2048);
+    expect(onFrame.mock.lastCall![0].frequency).toBeCloseTo(440, 0);
+    // Different window phases can vary RMS slightly; gain never changes it fourfold.
+    expect(onFrame.mock.lastCall![0].rms).toBeCloseTo(rawRms, 4);
+    expect(browser.getUserMedia).toHaveBeenCalledOnce();
+    expect(browser.source.connect).toHaveBeenCalledExactlyOnceWith(
+      browser.analyser,
+    );
+    expect(browser.analyser.connect).not.toHaveBeenCalled();
+    const framesAtStop = onFrame.mock.calls.length;
+    engine.stopMicrophone();
+    expect(engine.microphoneSampleRate).toBeNull();
+    expect(browser.stopTrack).toHaveBeenCalledOnce();
+    expect(browser.cancelAnimationFrame).toHaveBeenCalled();
+    expect(browser.source.disconnect).toHaveBeenCalledOnce();
+    browser.step(4000 / 60);
+    expect(onFrame).toHaveBeenCalledTimes(framesAtStop);
+    await engine.close();
+  });
+
+  it.each([10, 20, 30, 60] as const)(
+    "sustains a %i Hz target on rounded 60 Hz animation timestamps",
+    async (updateRateHz) => {
+      const browser = mockLiveMicrophone(440, 0);
+      const engine = new AudioEngine();
+      engine.configureMicrophone({ updateRateHz });
+      const onFrame = vi.fn();
+      await engine.startMicrophone(onFrame);
+      for (let index = 0; index <= 60; index += 1) {
+        browser.step(Math.round(index * (1000 / 60) * 1000) / 1000);
+      }
+      expect(onFrame).toHaveBeenCalledTimes(updateRateHz + 1);
+      await engine.close();
+    },
+  );
+
+  it("caps updates at browser callbacks and never catches up with bursts after a stall", async () => {
+    const browser = mockLiveMicrophone(440, 0);
+    const engine = new AudioEngine();
+    engine.configureMicrophone({ updateRateHz: 60 });
+    const onFrame = vi.fn();
+    await engine.startMicrophone(onFrame);
+    for (let index = 0; index <= 30; index += 1)
+      browser.step(index * (1000 / 30));
+    expect(onFrame).toHaveBeenCalledTimes(31);
+    browser.step(5000);
+    expect(onFrame).toHaveBeenCalledTimes(32);
+    await engine.close();
+  });
+
+  it("preserves the latest valid settings while microphone permission is pending", async () => {
+    const browser = mockLiveMicrophone();
+    let grant!: (stream: MediaStream) => void;
+    browser.getUserMedia.mockReturnValueOnce(
+      new Promise<MediaStream>((resolve) => {
+        grant = resolve;
+      }),
+    );
+    const engine = new AudioEngine();
+    const onFrame = vi.fn();
+    const starting = engine.startMicrophone(onFrame);
+    await Promise.resolve();
+    engine.configureMicrophone({ fftSize: 8192, inputGain: 4 });
+    grant({
+      getTracks: () => [{ stop: browser.stopTrack }],
+    } as unknown as MediaStream);
+    await starting;
+    browser.step(0);
+    expect(browser.analyser.fftSize).toBe(8192);
+    expect(onFrame.mock.lastCall![0].frequency).toBeCloseTo(440, 0);
+    expect(engine.microphoneSettings).toEqual({
+      ...DEFAULT_MICROPHONE_SETTINGS,
+      fftSize: 8192,
+      inputGain: 4,
+    });
+    await engine.close();
+  });
+});
 
 describe("audio lifecycle and musical scheduling", () => {
   it.each(["stop", "close"])(
@@ -350,29 +632,61 @@ describe("audio lifecycle and musical scheduling", () => {
   });
 
   it.each([
-    { meter: "3/4", duration: 6, quarterOffsets: [0, 1, 2, 3, 4, 5], accents: [0, 3] },
-    { meter: "5/8", duration: 5, quarterOffsets: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5], accents: [0, 5] },
-  ])("resets song accents in $meter after four quarter-note count-in clicks", async ({ meter, duration, quarterOffsets, accents }) => {
-    vi.useFakeTimers();
-    const { context, oscillators } = mockAudioBrowser();
-    const engine = new AudioEngine();
-    await engine.scheduleNotes([{ midi: null, beats: duration }], 120, "piano", {
-      countIn: 4, metronome: true, timeSignature: meter,
-    });
-    // Each click enters the lookahead before its onset, as in foreground use.
-    for (let step = 1; step <= 50; step += 1) {
-      context.currentTime = 10 + step / 10;
-      await vi.advanceTimersByTimeAsync(20);
-    }
-    expect(oscillators).toHaveLength(4 + quarterOffsets.length);
-    const countIn = oscillators.slice(0, 4);
-    expect(countIn.map((click) => click.frequency.value)).toEqual([1400, 1000, 1000, 1000]);
-    countIn.forEach((click, index) => expect(click.start.mock.calls[0][0]).toBeCloseTo(10.08 + index * 0.5, 8));
-    const song = oscillators.slice(4);
-    song.forEach((click, index) => {
-      expect(click.start.mock.calls[0][0]).toBeCloseTo(12.08 + quarterOffsets[index] * 0.5, 8);
-      expect(click.frequency.value).toBe(accents.includes(index) ? 1400 : 1000);
-    });
-    await engine.close();
-  });
+    {
+      meter: "3/4",
+      duration: 6,
+      quarterOffsets: [0, 1, 2, 3, 4, 5],
+      accents: [0, 3],
+    },
+    {
+      meter: "5/8",
+      duration: 5,
+      quarterOffsets: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5],
+      accents: [0, 5],
+    },
+  ])(
+    "resets song accents in $meter after four quarter-note count-in clicks",
+    async ({ meter, duration, quarterOffsets, accents }) => {
+      vi.useFakeTimers();
+      const { context, oscillators } = mockAudioBrowser();
+      const engine = new AudioEngine();
+      await engine.scheduleNotes(
+        [{ midi: null, beats: duration }],
+        120,
+        "piano",
+        {
+          countIn: 4,
+          metronome: true,
+          timeSignature: meter,
+        },
+      );
+      // Each click enters the lookahead before its onset, as in foreground use.
+      for (let step = 1; step <= 50; step += 1) {
+        context.currentTime = 10 + step / 10;
+        await vi.advanceTimersByTimeAsync(20);
+      }
+      expect(oscillators).toHaveLength(4 + quarterOffsets.length);
+      const countIn = oscillators.slice(0, 4);
+      expect(countIn.map((click) => click.frequency.value)).toEqual([
+        1400, 1000, 1000, 1000,
+      ]);
+      countIn.forEach((click, index) =>
+        expect(click.start.mock.calls[0][0]).toBeCloseTo(
+          10.08 + index * 0.5,
+          8,
+        ),
+      );
+      const song = oscillators.slice(4);
+      song.forEach((click, index) => {
+        expect(click.start.mock.calls[0][0]).toBeCloseTo(
+          12.08 + quarterOffsets[index] * 0.5,
+          8,
+        );
+        expect(click.frequency.value).toBe(
+          accents.includes(index) ? 1400 : 1000,
+        );
+      });
+      await engine.close();
+    },
+  );
 });

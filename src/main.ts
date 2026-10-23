@@ -42,6 +42,9 @@ import {
   noteLabel,
   type PitchFrame,
   type Instrument,
+  DEFAULT_MICROPHONE_SETTINGS,
+  normalizeMicrophoneSettings,
+  type MicrophoneSettings,
 } from "./audio";
 import {
   builtinScores,
@@ -94,6 +97,8 @@ const escape = (s: string) =>
       ]!,
   );
 const engine = new AudioEngine();
+let microphoneSettings: MicrophoneSettings = { ...DEFAULT_MICROPHONE_SETTINGS };
+let inputLatencyMs = 100;
 const pitchViewport = new PitchViewport();
 type View = "tuner" | "match" | "songs";
 let view: View = "tuner",
@@ -160,7 +165,7 @@ app.innerHTML = `
   <div class="sidebar-bottom"><button data-action="settings">${i("settings-2")}<span>练习设置</span></button><button data-action="help">${i("circle-help")}<span>使用指南</span>${i("arrow-up-right")}</button><div class="open-source"><span></span> ON-DEVICE AUDIO <small>开源 · 本地处理</small></div></div>
 </aside>
 <main>
-  <header class="topbar"><span><span class="studio-label">STUDIO</span><span class="slash">/</span><span id="breadcrumb">实时音准仪</span></span><span class="privacy">${i("shield-check")}声音只属于你 · 仅在本机分析</span><button class="help-icon" data-action="settings" aria-label="练习设置">${i("settings-2")}</button><button class="help-icon" data-action="help" aria-label="使用指南">${i("circle-help")}</button></header>
+  <header class="topbar"><span><span class="studio-label">STUDIO</span><span class="slash">/</span><span id="breadcrumb">实时音准仪</span></span><span class="privacy">${i("shield-check")}声音只属于你 · 仅在本机分析</span><button class="help-icon mobile-import" data-action="import" aria-label="导入曲谱">${i("upload")}</button><button class="help-icon" data-action="settings" aria-label="练习设置">${i("settings-2")}</button><button class="help-icon" data-action="help" aria-label="使用指南">${i("circle-help")}</button></header>
   <div class="page">
     <div class="page-heading"><div><div class="eyebrow"><span></span> A SPACE FOR YOUR VOICE</div><h1 id="page-title">Find your <em>frequency.</em></h1><p id="page-subtitle">让声音被看见，让每一次练习都有方向。</p></div><div class="hero-actions"><span class="hero-caption">LISTEN. SING. FEEL.</span><button class="button secondary import-top" data-action="import">${i("upload")}导入你的曲谱${i("arrow-up-right")}</button></div><div class="hero-orbit" aria-hidden="true"><span></span><span></span><b>✧</b></div></div>
     <div class="workspace">
@@ -169,14 +174,16 @@ app.innerHTML = `
           <div class="card-header"><h2>${i("audio-lines")}<span id="monitor-title">实时音准</span><small>PITCH OBSERVATORY</small></h2><div class="chart-tools"><span class="status" id="mic-status"><span></span>麦克风未开启</span><button class="chart-expand-button" id="chart-expand-button" data-action="expand-chart" aria-pressed="false">${i("maximize-2")}<span>放大曲线</span></button></div></div>
           <div class="pitch-readout"><div class="current-pitch"><span class="readout-label">YOUR NOTE</span><span id="live-note">—</span><span class="pitch-hz" id="live-hz">等待你的声音</span></div><div class="tuning-readout"><span class="readout-label">INTONATION</span><strong id="live-cents">— <small>音分</small></strong><span id="tuning-status">准备好，就唱出一个音</span></div></div>
           <div class="pitch-chart"><canvas id="pitch-canvas" role="img" aria-label="最近十秒的演唱音高曲线，纵轴为音名，横轴为时间，音域自动适应整段声音"></canvas><div class="chart-empty" id="chart-empty"><span class="empty-mic">${i("mic")}<b></b><b></b></span><strong>Your voice, in a new light.</strong><span>开启麦克风，让第一个音点亮这里。</span></div><div class="chart-legend"><span class="legend-live"></span>你的声音<span class="legend-target"></span><span id="chart-reference-label">标准音</span><span class="chart-range" id="chart-range">音域自适应</span><span class="chart-window">10 SEC WINDOW</span></div></div>
-          <div class="tuner-bottom"><span>${i("headphones")}建议佩戴耳机，识别更准确</span><button class="button primary" id="mic-button" data-action="mic">${i("mic")}开启麦克风</button></div>
+          <div class="target-dock" id="target-dock" aria-label="目标音与播放"><div class="dock-label">目标音<p class="target-frequency" id="target-frequency">261.63 <span>Hz</span></p></div></div>
+          <div class="song-practice-dock" id="song-practice-dock" hidden><div class="song-transport"></div></div>
+          <div class="tuner-bottom"><span id="microphone-help">${i("headphones")}建议佩戴耳机，识别更准确</span><button class="button secondary mic-settings" data-action="settings">${i("sliders-horizontal")}收音设置</button><button class="button primary" id="mic-button" data-action="mic" aria-describedby="microphone-help">${i("mic")}开启麦克风</button></div>
         </section>
         <section class="card keyboard-card" id="keyboard-card"><div class="card-header"><h2>${i("piano")}听一个标准音</h2><div class="octave-switch"><button data-action="octave-down" aria-label="降低键盘八度">${i("minus")}</button><span id="octave-label">C3 – B4</span><button data-action="octave-up" aria-label="升高键盘八度">${i("plus")}</button></div></div><div class="keyboard-wrap"><div id="keyboard" class="keyboard" aria-label="标准音键盘"></div></div><div class="keyboard-footer"><span>点击琴键听音，再试着唱出来</span><span>电脑快捷键 <kbd>A</kbd> – <kbd>K</kbd></span></div></section>
         <section class="card songs-card" id="songs-card" hidden><div class="card-header"><h2>${i("book-open")}我的曲谱</h2><button class="text-button" data-action="editor">手动编谱 ${i("plus")}</button></div><div class="score-controls"><label>选择曲谱<select id="score-select"></select></label><label>速度 <span id="bpm-text">80 BPM</span><input id="bpm" type="range" min="30" max="220" value="80"></label></div><div class="score-meta"><strong id="score-title"></strong><span id="score-meta"></span><button class="text-button" data-action="export" aria-label="导出当前曲谱">${i("download")}导出</button></div><div id="score-notes" class="score-notes" aria-label="曲谱音符，点击可试听"></div><div class="range-controls"><label>起始音符<input id="range-start" type="number" min="1" value="1"></label><span>至</span><label>结束音符<input id="range-end" type="number" min="1" value="1"></label><label>移调<select id="transpose">${Array.from({ length: 25 }, (_, n) => `<option value="${n - 12}" ${n === 12 ? "selected" : ""}>${n === 12 ? "原调" : `${n > 12 ? "+" : ""}${n - 12} 半音`}</option>`).join("")}</select></label></div><div class="song-actions"><label class="check-label"><input id="metronome" type="checkbox" checked>节拍器</label><label class="check-label"><input id="guide" type="checkbox">跟唱提示音</label><button class="icon-button" data-action="loop" id="loop-button" aria-label="循环练习" aria-pressed="false">${i("repeat-2")}</button><button class="button secondary" data-action="listen" id="listen-button">${i("headphones")}听示范</button><button class="button primary" data-action="practice" id="practice-button">${i("play")}开始练习</button></div><p id="song-feedback" class="song-feedback" role="status">先听一遍旋律，再跟着节拍唱。练习前有 4 拍预备。</p><div id="practice-result" class="practice-result" hidden></div></section>
         <div class="bottom-tip">${i("sparkles")}<span id="bottom-tip">小提示：不用唱得很响亮。自然、稳定的声音，是最好的开始。</span></div>
       </div>
       <aside class="right-column">
-        <section class="card reference-card"><div class="card-header"><h2>${i("music-2")}目标音</h2><span class="tag">标准音高</span></div><div class="target-selector"><button class="round-button" data-action="target-down" aria-label="降低目标音">${i("minus")}</button><div><strong id="target-note">C<span>4</span></strong><span id="target-solfege">Do · 中央 C</span></div><button class="round-button" data-action="target-up" aria-label="升高目标音">${i("plus")}</button></div><p class="target-frequency" id="target-frequency">261.63 <span>Hz</span></p><div class="timbre-label">参考音色</div><div class="segmented"><button class="selected" data-instrument="piano" aria-pressed="true">${i("piano")}钢琴</button><button data-instrument="accordion" aria-pressed="false">${i("music-2")}手风琴</button></div><button class="button play-reference" id="reference-button" data-action="reference">${i("volume-2")}播放标准音</button><label class="volume-control">${i("volume-2")}<input id="volume" type="range" min="0" max="100" value="55" aria-label="播放音量"><span id="volume-text">55%</span></label><div class="tuning-reference">十二平均律 <span>·</span> A4 = <span id="a4-display">440</span> Hz</div></section>
+        <section class="card reference-card"><div class="card-header"><h2>${i("music-2")}音色与播放</h2><span class="tag">标准音设置</span></div><div class="target-selector"><button class="round-button" data-action="target-down" aria-label="降低目标音">${i("minus")}</button><div><strong id="target-note">C<span>4</span></strong><span id="target-solfege">Do · 中央 C</span></div><button class="round-button" data-action="target-up" aria-label="升高目标音">${i("plus")}</button></div><div class="timbre-label">参考音色</div><div class="segmented"><button class="selected" data-instrument="piano" aria-pressed="true">${i("piano")}钢琴</button><button data-instrument="accordion" aria-pressed="false">${i("music-2")}手风琴</button></div><button class="button play-reference" id="reference-button" data-action="reference">${i("volume-2")}播放标准音</button><label class="volume-control">${i("volume-2")}<input id="volume" type="range" min="0" max="100" value="55" aria-label="标准音播放音量"><span id="volume-text">55%</span></label><div class="tuning-reference">十二平均律 <span>·</span> A4 = <span id="a4-display">440</span> Hz</div></section>
         <section class="card input-card"><div class="card-header"><h2>输入状态</h2><span id="input-state">未连接</span></div><div class="meter" id="input-meter">${Array.from({ length: 32 }, () => "<span></span>").join("")}</div><div class="meter-labels"><span>安静</span><span>适中</span><span>响亮</span></div><p id="input-tip">开启麦克风后，观察声音的输入强度。</p></section>
         <section class="practice-guide"><div class="guide-icon">${i("headphones")}</div><h3>给自己 5 分钟</h3><p>从一个舒服的音开始，<br>听一听，唱一唱，再靠近一点。</p><div class="guide-steps"><span><b>1</b>播放标准音，仔细聆听</span><span><b>2</b>用「啊」或「呜」轻声模唱</span><span><b>3</b>观察曲线，慢慢调整音高</span></div><div class="practice-stat"><span>今日已练习</span><strong id="today-time">0 <small>分钟</small></strong></div></section>
       </aside>
@@ -187,7 +194,32 @@ app.innerHTML = `
 <div id="toast" class="toast" role="status" hidden></div>
 <dialog id="import-dialog" aria-labelledby="import-dialog-title"><div class="dialog-head"><div><span class="eyebrow">YOUR MUSIC, YOUR PACE</span><h2 id="import-dialog-title">把想唱的歌，带进练习室</h2></div><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><p>MusicXML / MIDI 可直接导入。图片与 PDF 的识别结果需要校对。</p><label class="field">曲谱类型<select id="import-kind"><option value="digital">MusicXML / MIDI / JSON</option><option value="jianpu">图片 / PDF 简谱（本地文字识别）</option><option value="staff">图片 / PDF 五线谱（Audiveris 服务）</option></select></label><label class="field" id="omr-field" hidden>五线谱识别服务地址<input id="omr-endpoint" type="url" placeholder="http://127.0.0.1:8765/api/recognize"><small>需自行运行附带的本地服务；曲谱只发送到此地址。</small></label><label class="upload-zone" for="score-file">${i("upload")}<strong>点击选择你的曲谱</strong><span>MusicXML、MXL、MIDI、JSON、PNG、JPG、PDF · 最大 20 MB</span><input id="score-file" type="file" accept=".xml,.musicxml,.mxl,.mid,.midi,.json,.png,.jpg,.jpeg,.webp,.pdf" hidden></label><p id="import-progress" class="import-progress" role="status"></p><div id="ocr-review" hidden><div class="notice">简谱识别无法可靠保留上下标、八度和时值。请对照原谱修正，再保存。</div><label class="field">识别文字<textarea id="ocr-text" rows="5"></textarea></label><button class="button primary" data-action="save-ocr">校对完成，导入曲谱</button></div><div class="dialog-foot">只有你主动选择五线谱服务时，曲谱才会离开此设备。首次简谱识别需联网下载识别模型。</div></dialog>
 <dialog id="editor-dialog" aria-labelledby="editor-dialog-title"><div class="dialog-head"><h2 id="editor-dialog-title">写一段自己的旋律</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><label class="field">曲谱名称<input id="editor-title" value="我的旋律" maxlength="100"></label><label class="field">简谱<textarea id="editor-text" rows="5" spellcheck="false">1 1 5 5 | 6 6 5- | 4 4 3 3 | 2 2 1-</textarea></label><p class="notation-help">以 C 大调为基准：1–7 为音符，0 为休止；<code>1'</code> 高八度，<code>1,</code> 低八度；<code>1-</code> 两拍，<code>1_</code> 半拍，<code>1__</code> 四分之一拍；可用 #、b 升降音。请用空格分隔音符。</p><button class="button primary" data-action="save-editor">${i("check")}保存到我的曲谱</button></dialog>
-<dialog id="settings-dialog" aria-labelledby="settings-dialog-title"><div class="dialog-head"><h2 id="settings-dialog-title">让练习更适合你</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><label class="field">标准音 A4（Hz）<input id="tuning" type="number" min="430" max="450" step="1" value="440"><small>默认 440 Hz。调节后，识别与参考音会一起更新。</small></label><label class="field">跟唱延迟校正（毫秒）<input id="latency" type="number" min="0" max="500" step="10" value="100"><small>用于补偿设备输入延迟，只影响曲谱练习的对齐与评分。</small></label><div class="notice">手机和平板请通过 HTTPS 访问。局域网 HTTP 地址通常不能使用麦克风；本机 localhost 可以。</div><button class="button primary" data-action="save-settings">保存设置</button></dialog>
+<dialog id="settings-dialog" aria-labelledby="settings-dialog-title">
+  <div class="dialog-head"><div><span class="eyebrow">TUNE YOUR LISTENING</span><h2 id="settings-dialog-title">让练习更适合你</h2></div><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div>
+  <div class="settings-body">
+  <p class="settings-intro">轻声唱也能被听见。先试日常设置，再根据环境微调；保存后立即用于当前监听。</p>
+  <fieldset class="settings-section"><legend>麦克风收音</legend>
+    <div class="mic-presets" aria-label="收音场景预设"><button class="button secondary" data-action="mic-preset" data-preset="soft">轻声练习</button><button class="button secondary" data-action="mic-preset" data-preset="balanced">日常环境</button><button class="button secondary" data-action="mic-preset" data-preset="noisy">环境较吵</button></div>
+    <p class="setting-note">预设会调整输入增益、音量门限和可信度，仍需点击保存。</p>
+    <label class="field" for="mic-gain">收音灵敏度 · 输入增益 <output id="mic-gain-value" for="mic-gain">1.0×</output><input id="mic-gain" type="range" min="0.5" max="4" step="0.1" value="1" aria-describedby="mic-gain-help"></label><p class="setting-help" id="mic-gain-help">调高后更容易拾取轻声，也会放大背景声。这是本机分析增益，不改变系统麦克风音量，也不会从扬声器播放人声。</p>
+    <label class="field" for="mic-gate">音量门限 <output id="mic-gate-value" for="mic-gate">0.008</output><input id="mic-gate" type="range" min="0.001" max="0.05" step="0.001" value="0.008" aria-describedby="mic-gate-help"></label><p class="setting-help" id="mic-gate-help">越低越容易拾取轻声和尾音，也更容易收进环境声；越高越能忽略轻微噪声，但轻声曲线可能中断。数值是数字信号电平，不是实际声压。</p>
+  </fieldset>
+  <fieldset class="settings-section"><legend>识别频率与音域</legend>
+    <label class="field" for="mic-range-preset">音域预设<select id="mic-range-preset"><option value="wide">宽音域 · 50–2200 Hz</option><option value="low">偏低音域 · 65–1000 Hz</option><option value="high">偏高音域 · 130–2000 Hz</option><option value="custom">自定义范围</option></select></label>
+    <div class="settings-pair"><label class="field" for="mic-min-frequency">最低音高（Hz）<input id="mic-min-frequency" type="number" min="40" max="500" step="1" value="50" aria-describedby="mic-range-help"><small>可设为 40–500 Hz</small></label><label class="field" for="mic-max-frequency">最高音高（Hz）<input id="mic-max-frequency" type="number" min="200" max="3000" step="1" value="2200" aria-describedby="mic-range-help"><small>可设为 200–3000 Hz</small></label></div>
+    <p class="setting-help" id="mic-range-help">Hz 在这里表示声音高低：例如 A4 = 440 Hz。缩小范围会忽略范围外的音高估计，超出范围时不显示曲线；不会将声音移调，也不能代替降噪。</p>
+    <label class="field" for="mic-refresh">检测更新频率<select id="mic-refresh" aria-describedby="mic-refresh-help"><option value="10">10 次/秒 · 更省电</option><option value="20">20 次/秒 · 轻量</option><option value="30" selected>30 次/秒 · 均衡</option><option value="60">60 次/秒 · 更细密</option></select></label>
+    <p class="setting-help" id="mic-refresh-help">控制多久检测一次音高；较高可捕捉更密的变化，也更耗电。它不改变音名、识别上限或硬件采样率，实际次数受设备性能与屏幕刷新限制。</p>
+    <div class="sample-rate-note"><span>音频处理采样率</span><strong id="mic-sample-rate">开启麦克风后显示</strong><p>这是浏览器每秒处理的音频采样数，由浏览器与设备决定；与上面的音高 Hz、检测次数/秒不同。</p></div>
+  </fieldset>
+  <details class="settings-advanced"><summary>更多检测选项 ${i("chevron-down")}</summary><div>
+    <label class="field" for="mic-clarity">识别可信度门限 <output id="mic-clarity-value" for="mic-clarity">87%</output><input id="mic-clarity" type="range" min="0.6" max="0.99" step="0.01" value="0.87" aria-describedby="mic-clarity-help"></label><p class="setting-help" id="mic-clarity-help">较高会严格过滤不稳定的音高，曲线可能变少；较低更容易显示音高，也更可能出现跳动。此百分比是算法指标，不是唱准分数。</p>
+    <label class="field" for="mic-window">分析窗口<select id="mic-window" aria-describedby="mic-window-help"><option value="2048">2048 个采样 · 短窗口</option><option value="4096" selected>4096 个采样 · 均衡</option><option value="8192">8192 个采样 · 长窗口</option></select></label><p class="setting-help" id="mic-window-help">长窗口包含更多声音片段，有助于覆盖低音的更多振动周期，但响应变化可能更慢、计算更重。短窗口反应较快，低音可能较难稳定识别。更改窗口后，曲谱跟唱可能需要重新微调延迟校正。<span id="mic-window-time"></span></p>
+  </div></details>
+  <fieldset class="settings-section"><legend>标准音与节奏</legend><div class="settings-pair"><label class="field">标准音 A4（Hz）<input id="tuning" type="number" min="430" max="450" step="1" value="440"><small>默认 440 Hz；用于音名换算和参考音，不是麦克风采样率。</small></label><label class="field">跟唱延迟（毫秒）<input id="latency" type="number" min="0" max="500" step="10" value="100"><small>用于输入延迟对齐，只影响曲谱练习的时间与评分。</small></label></div></fieldset>
+  <p class="setting-help">声音仅在本机分析。手机请通过 HTTPS 访问，并允许浏览器使用麦克风。标准音播放音量请在「音色与播放」中调整。</p>
+  </div><p id="settings-error" role="alert" hidden></p><div class="settings-actions"><button class="button secondary" data-action="reset-mic-settings">恢复收音默认值</button><button class="button primary" data-action="save-settings">保存设置</button></div>
+</dialog>
 <dialog id="help-dialog" aria-labelledby="help-dialog-title"><div class="dialog-head"><h2 id="help-dialog-title">从第一个音开始</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><div class="help-content"><h3>实时音准仪</h3><p>开启麦克风并允许浏览器录音。音名和曲线显示当前音高，音分表示距离最近标准音的偏差。绿色表示误差在 ±25 音分以内；音量太低、噪声或多人合唱会降低准确度。</p><h3>标准音模唱</h3><p>点击琴键或播放目标音，再用自然的声音模唱。「标准音模唱」模式会把偏差对准你选的目标音。钢琴与手风琴采用本地合成音色。</p><h3>曲谱练习</h3><p>选一首曲谱、调整速度与片段。先听示范，再开始练习。4 拍预备后跟着音符唱，默认不播放旋律，避免扬声器串音。音准命中率按有效发声采样计算，覆盖率表示目标发声时长中检测到有效声音的比例；节奏参考首次发声及换音时间，连续同音无法可靠区分。</p><h3>图片和 PDF</h3><p>简谱使用文字 OCR，必须校对八度和时值。五线谱需要附带的 Audiveris 服务，识别后也需要核对；复杂多声部只取选定主旋律，不支持完整乐队总谱。更准确的方式是从制谱软件导出 MusicXML。</p><h3>数据与隐私</h3><p>麦克风声音不上传、不录制。自定义曲谱和今日练习时长保存在当前浏览器中；没有账号与跨设备同步。电脑、平板、手机均可通过同一 HTTPS 网址访问。</p></div></dialog>`;
 
 const chartHost = document.querySelector<HTMLElement>(".workspace")!;
@@ -196,6 +228,16 @@ const mainColumn = document.querySelector<HTMLElement>(".main-column")!;
 chartHost.prepend(tunerCard);
 const inputCard = document.querySelector<HTMLElement>(".input-card")!;
 mainColumn.insertBefore(inputCard, document.querySelector(".bottom-tip"));
+// Keep one set of controls with the canvas, including in its enlarged dialog.
+$("target-dock").append(
+  document.querySelector(".target-selector")!,
+  $("reference-button"),
+);
+$("song-practice-dock").prepend(document.querySelector(".score-controls")!);
+$("song-practice-dock")
+  .querySelector(".song-transport")!
+  .append($("listen-button"), $("practice-button"));
+$("song-practice-dock").append($("song-feedback"));
 const chartDialog = document.createElement("dialog");
 chartDialog.id = "chart-focus-dialog";
 chartDialog.className = "chart-focus-dialog";
@@ -238,6 +280,88 @@ function setText(id: string, value: string) {
 function setMarkup(id: string, value: string) {
   const node = $(id);
   if (node.innerHTML !== value) node.innerHTML = value;
+}
+const microphoneFields: Record<keyof MicrophoneSettings, string> = {
+  inputGain: "mic-gain",
+  noiseThreshold: "mic-gate",
+  minFrequency: "mic-min-frequency",
+  maxFrequency: "mic-max-frequency",
+  clarityThreshold: "mic-clarity",
+  updateRateHz: "mic-refresh",
+  fftSize: "mic-window",
+};
+const frequencyPresets: Record<string, [number, number]> = {
+  wide: [50, 2200],
+  low: [65, 1000],
+  high: [130, 2000],
+};
+function updateMicrophoneDescriptions() {
+  setText(
+    "mic-gain-value",
+    `${Number($<HTMLInputElement>("mic-gain").value).toFixed(1)}×`,
+  );
+  setText(
+    "mic-gate-value",
+    Number($<HTMLInputElement>("mic-gate").value).toFixed(3),
+  );
+  setText(
+    "mic-clarity-value",
+    `${Math.round(Number($<HTMLInputElement>("mic-clarity").value) * 100)}%`,
+  );
+  const minimum = Number($<HTMLInputElement>("mic-min-frequency").value);
+  const maximum = Number($<HTMLInputElement>("mic-max-frequency").value);
+  $<HTMLSelectElement>("mic-range-preset").value =
+    Object.entries(frequencyPresets).find(
+      ([, range]) => range[0] === minimum && range[1] === maximum,
+    )?.[0] ?? "custom";
+  const rate = engine.microphoneSampleRate;
+  setText(
+    "mic-sample-rate",
+    rate ? `${rate.toLocaleString()} Hz` : "开启麦克风后显示",
+  );
+  const window = Number($<HTMLSelectElement>("mic-window").value);
+  setText(
+    "mic-window-time",
+    rate
+      ? ` 当前窗口约 ${((window / rate) * 1000).toFixed(1)} 毫秒。`
+      : ` 以 48,000 Hz 为例，此窗口约 ${((window / 48000) * 1000).toFixed(1)} 毫秒，实际时长在开启麦克风后显示。`,
+  );
+}
+function fillMicrophoneSettings(settings: MicrophoneSettings) {
+  for (const [key, id] of Object.entries(microphoneFields)) {
+    $<HTMLInputElement | HTMLSelectElement>(id).value = String(
+      settings[key as keyof MicrophoneSettings],
+    );
+  }
+  $("settings-error").hidden = true;
+  updateMicrophoneDescriptions();
+}
+function readMicrophoneSettings(): MicrophoneSettings | null {
+  const result: Record<string, number> = {};
+  for (const [key, id] of Object.entries(microphoneFields)) {
+    const input = $<HTMLInputElement | HTMLSelectElement>(id);
+    if (
+      !input.value ||
+      !input.checkValidity() ||
+      !Number.isFinite(Number(input.value))
+    ) {
+      setText(
+        "settings-error",
+        "请填写有效的收音设置，数值需在各项标注的范围内。",
+      );
+      $("settings-error").hidden = false;
+      input.focus();
+      return null;
+    }
+    result[key] = Number(input.value);
+  }
+  if (result.minFrequency >= result.maxFrequency) {
+    setText("settings-error", "最低音高必须小于最高音高。请检查识别范围。");
+    $("settings-error").hidden = false;
+    $("mic-min-frequency").focus();
+    return null;
+  }
+  return result as unknown as MicrophoneSettings;
 }
 function toast(message: string) {
   $("toast").textContent = message;
@@ -323,6 +447,7 @@ function setView(next: View) {
   if (view !== next && chartExpanded) setChartExpanded(false);
   if (view !== next) stopSong();
   view = next;
+  document.body.dataset.mode = view;
   document.querySelectorAll<HTMLElement>("[data-view]").forEach((b) => {
     b.classList.toggle("active", b.dataset.view === view);
     b.setAttribute("aria-current", b.dataset.view === view ? "page" : "false");
@@ -355,6 +480,8 @@ function setView(next: View) {
         : "实时音准";
   $("keyboard-card").hidden = view === "songs";
   $("songs-card").hidden = view !== "songs";
+  $("target-dock").hidden = view === "songs";
+  $("song-practice-dock").hidden = view !== "songs";
   const heading = document.querySelector<HTMLElement>(".page-heading");
   if (
     heading?.animate &&
@@ -424,6 +551,7 @@ function updateMic() {
   $("mic-status").classList.toggle("connected", mic);
   tunerCard.classList.toggle("is-listening", mic);
   $("input-state").textContent = mic ? "已连接" : "未连接";
+  updateMicrophoneDescriptions();
   $("chart-empty").hidden = mic || playing;
   refreshIcons();
 }
@@ -460,8 +588,7 @@ function onPitch(next: PitchFrame) {
   samples.push({ t: now, midi: next.midi });
   while (samples.length && samples[0].t < now - 11000) samples.shift();
   if (practicing && playing && songStart > 0) {
-    const correctedTime =
-      next.time * 1000 - Number($<HTMLInputElement>("latency").value);
+    const correctedTime = next.time * 1000 - inputLatencyMs;
     const elapsed = correctedTime - songStart;
     let index = practiceOnsets.length - 1;
     while (index >= 0 && practiceOnsets[index] > elapsed) index--;
@@ -705,9 +832,7 @@ async function startSong(practice: boolean) {
       },
       onComplete: () => {
         if (token !== sessionToken) return;
-        const grace = practice
-          ? Number($<HTMLInputElement>("latency").value)
-          : 0;
+        const grace = practice ? inputLatencyMs : 0;
         window.setTimeout(() => {
           if (token === sessionToken) finishSong(practice, notes);
         }, grace);
@@ -873,8 +998,35 @@ document.addEventListener("click", async (event) => {
       }
       break;
     case "settings":
+      fillMicrophoneSettings(microphoneSettings);
+      $<HTMLInputElement>("tuning").value = String(engine.a4);
+      $<HTMLInputElement>("latency").value = String(inputLatencyMs);
       $<HTMLDialogElement>("settings-dialog").showModal();
       break;
+    case "reset-mic-settings":
+      fillMicrophoneSettings({ ...DEFAULT_MICROPHONE_SETTINGS });
+      break;
+    case "mic-preset": {
+      const presets: Record<string, Partial<MicrophoneSettings>> = {
+        soft: { inputGain: 2, noiseThreshold: 0.004, clarityThreshold: 0.87 },
+        balanced: {
+          inputGain: 1,
+          noiseThreshold: 0.008,
+          clarityThreshold: 0.87,
+        },
+        noisy: { inputGain: 1, noiseThreshold: 0.02, clarityThreshold: 0.93 },
+      };
+      const preset = presets[el.dataset.preset ?? ""];
+      if (preset) {
+        for (const [key, value] of Object.entries(preset)) {
+          $<HTMLInputElement>(
+            microphoneFields[key as keyof MicrophoneSettings],
+          ).value = String(value);
+        }
+        updateMicrophoneDescriptions();
+      }
+      break;
+    }
     case "help":
       $<HTMLDialogElement>("help-dialog").showModal();
       break;
@@ -913,22 +1065,33 @@ document.addEventListener("click", async (event) => {
         !Number.isFinite(a4) ||
         latency < 0 ||
         latency > 500 ||
-        !Number.isFinite(latency)
+        !Number.isFinite(latency) ||
+        !$<HTMLInputElement>("latency").value.trim()
       ) {
-        toast("A4 请输入 430–450 Hz，延迟请输入 0–500 毫秒。");
+        setText(
+          "settings-error",
+          "A4 请输入 430–450 Hz，延迟请输入 0–500 毫秒。",
+        );
+        $("settings-error").hidden = false;
         break;
       }
+      const nextMicrophone = readMicrophoneSettings();
+      if (!nextMicrophone) break;
+      microphoneSettings = engine.configureMicrophone(nextMicrophone);
       engine.a4 = a4;
+      inputLatencyMs = latency;
       $("a4-display").textContent = String(a4);
       updateTarget();
       try {
         localStorage.setItem(
           "shengzhun-settings",
-          JSON.stringify({ a4, latency }),
+          JSON.stringify({ a4, latency, microphone: microphoneSettings }),
         );
       } catch {}
       $<HTMLDialogElement>("settings-dialog").close();
-      toast("练习设置已保存。");
+      toast(
+        mic ? "练习设置已保存，收音参数已用于当前监听。" : "练习设置已保存。",
+      );
       break;
     }
     case "listen":
@@ -1028,6 +1191,18 @@ $("transpose").addEventListener("change", () => {
 $("volume").addEventListener("input", () => {
   $("volume-text").textContent = $<HTMLInputElement>("volume").value + "%";
 });
+for (const id of Object.values(microphoneFields)) {
+  $(id).addEventListener("input", updateMicrophoneDescriptions);
+  $(id).addEventListener("change", updateMicrophoneDescriptions);
+}
+$("mic-range-preset").addEventListener("change", () => {
+  const range =
+    frequencyPresets[$<HTMLSelectElement>("mic-range-preset").value];
+  if (!range) return;
+  $<HTMLInputElement>("mic-min-frequency").value = String(range[0]);
+  $<HTMLInputElement>("mic-max-frequency").value = String(range[1]);
+  updateMicrophoneDescriptions();
+});
 document.addEventListener("keydown", (event) => {
   if (
     event.repeat ||
@@ -1077,15 +1252,24 @@ try {
   const settings = JSON.parse(
     localStorage.getItem("shengzhun-settings") || "null",
   );
-  if (settings && settings.a4 >= 430 && settings.a4 <= 450) {
+  if (
+    settings &&
+    Number.isFinite(settings.a4) &&
+    settings.a4 >= 430 &&
+    settings.a4 <= 450
+  ) {
     engine.a4 = settings.a4;
     $<HTMLInputElement>("tuning").value = String(settings.a4);
     $("a4-display").textContent = String(settings.a4);
-    $<HTMLInputElement>("latency").value = String(
-      Math.max(0, Math.min(500, Number(settings.latency) || 0)),
-    );
+    inputLatencyMs = Number.isFinite(settings.latency)
+      ? Math.max(0, Math.min(500, settings.latency))
+      : 100;
+    $<HTMLInputElement>("latency").value = String(inputLatencyMs);
   }
+  microphoneSettings = normalizeMicrophoneSettings(settings?.microphone);
 } catch {}
+engine.configureMicrophone(microphoneSettings);
+fillMicrophoneSettings(microphoneSettings);
 
 const canvas = $<HTMLCanvasElement>("pitch-canvas");
 const ctx = canvas.getContext("2d")!;

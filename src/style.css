@@ -396,6 +396,9 @@ main {
   width: 15px;
   height: 15px;
 }
+.mobile-import {
+  display: none;
+}
 .page {
   max-width: 1540px;
   margin: 0 auto;
@@ -837,6 +840,244 @@ h1 em {
   border-radius: 30px;
   min-width: 151px;
   min-height: 44px;
+}
+.tuner-bottom .mic-settings {
+  margin-left: auto;
+}
+.target-dock {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) auto minmax(150px, 1fr);
+  align-items: center;
+  gap: 20px;
+  padding: 15px 27px;
+  margin: 8px 27px 0;
+  border: 1px solid #a79aff20;
+  border-radius: 12px;
+  background: #a79aff06;
+}
+.dock-label {
+  color: #c2badf;
+  font-size: 12px;
+}
+.target-dock .target-selector {
+  padding: 0;
+  gap: 16px;
+}
+.target-dock .target-selector strong {
+  font-size: 35px;
+}
+.target-dock .target-selector strong span {
+  font-size: 22px;
+}
+.target-dock .target-selector > div > span {
+  margin-top: 3px;
+}
+.target-dock .round-button {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+.target-dock .target-frequency {
+  position: static;
+  width: auto;
+  text-align: left;
+  margin: 5px 0 0;
+  font-size: 11px;
+}
+.target-dock .play-reference {
+  justify-self: end;
+  margin: 0;
+  width: auto;
+  min-width: 150px;
+  min-height: 44px;
+  font-size: 12px;
+}
+.song-practice-dock {
+  margin: 10px 27px 0;
+  padding: 15px 20px 0;
+  border: 1px solid #a79aff20;
+  border-radius: 12px;
+  background: #a79aff06;
+}
+.song-practice-dock .score-controls {
+  padding: 0 0 13px;
+  flex-direction: row;
+}
+.song-transport {
+  display: flex;
+  gap: 10px;
+}
+.song-transport .button {
+  flex: 1;
+}
+.song-practice-dock .song-feedback {
+  padding: 10px 0;
+  font-size: 12px;
+}
+.reference-card .timbre-label {
+  margin-top: 24px;
+}
+
+/* Settings explain the tradeoffs at the point of adjustment. */
+#settings-dialog {
+  width: min(650px, calc(100vw - 32px));
+}
+#settings-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  height: min(860px, calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+}
+#settings-dialog > .dialog-head,
+#settings-dialog > .settings-actions,
+#settings-dialog > #settings-error {
+  flex-shrink: 0;
+}
+.settings-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 8px;
+  scrollbar-gutter: stable;
+}
+.settings-intro {
+  color: #a2b3c9;
+  font-size: 13px;
+  line-height: 1.9;
+}
+.settings-section {
+  min-width: 0;
+  margin: 25px 0 0;
+  padding: 20px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.settings-section legend {
+  padding: 0 12px 0 0;
+  font-size: 14px;
+  color: #c6d6e8;
+}
+.settings-section .field,
+.settings-advanced .field {
+  position: relative;
+}
+.settings-section output,
+.settings-advanced output {
+  margin-left: auto;
+  color: var(--cyan);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+#settings-dialog .field input[type="range"] {
+  height: 38px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  accent-color: var(--cyan);
+  cursor: pointer;
+}
+.mic-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mic-presets .button {
+  flex: 1;
+  padding: 10px;
+  min-height: 44px;
+}
+.setting-note,
+.setting-help {
+  color: #93a7bf;
+  font-size: 12px;
+  line-height: 1.85;
+  margin: 0 0 21px;
+}
+.setting-note {
+  margin: 10px 0 24px;
+  font-size: 11px;
+}
+.settings-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+.settings-pair .field {
+  min-width: 0;
+}
+.settings-pair input {
+  width: 100%;
+  min-width: 0;
+}
+.settings-advanced {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0 17px;
+  margin: 24px 0;
+}
+.settings-advanced summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 52px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #b3c5dc;
+  list-style: none;
+}
+.settings-advanced summary::-webkit-details-marker {
+  display: none;
+}
+.settings-advanced[open] summary svg {
+  transform: rotate(180deg);
+}
+.settings-advanced > div {
+  padding-top: 12px;
+}
+.sample-rate-note {
+  background: #08121b66;
+  border-radius: 10px;
+  padding: 16px;
+  color: #95aac3;
+  font-size: 12px;
+}
+.sample-rate-note strong {
+  float: right;
+  font-size: 12px;
+  font-weight: 500;
+  color: #b0c9dc;
+}
+.sample-rate-note p {
+  clear: both;
+  line-height: 1.85;
+  margin: 10px 0 0;
+  font-size: 11px;
+}
+.settings-actions {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line);
+  background: #121b29;
+}
+.settings-actions .button {
+  flex: 1;
+}
+#settings-error {
+  padding: 13px 15px;
+  border: 1px solid #e69d9d44;
+  border-radius: 8px;
+  color: #ffd3cc;
+  background: #e69d9d0d;
+  font-size: 12px;
+  line-height: 1.7;
 }
 .chart-focus-dialog {
   width: calc(100vw - 24px);
@@ -2536,50 +2777,21 @@ dialog > p,
     grid-template-columns: 1fr;
   }
   .reference-card {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    padding-bottom: 7px;
+    display: block;
+    padding-bottom: 12px;
   }
   .reference-card .card-header {
     grid-column: 1 / -1;
     padding: 20px 21px 0;
   }
-  .target-selector {
-    grid-column: 1;
-    grid-row: 2 / 5;
-    padding: 23px 12px 31px 17px;
-    gap: 5px;
-  }
-  .target-selector strong {
-    font-size: 46px;
-  }
-  .target-selector strong span {
-    font-size: 28px;
-  }
-  .target-selector > div > span {
-    font-size: 9px;
-    white-space: nowrap;
-  }
-  .target-selector .round-button {
-    width: 32px;
-    height: 44px;
-    border-color: transparent;
-  }
-  .target-frequency {
-    position: absolute;
-    top: 139px;
-    width: 50%;
-    margin: 0;
+  .timbre-label {
+    padding: 0 21px;
+    margin: 21px 0 10px;
     font-size: 11px;
   }
-  .timbre-label {
-    padding: 0;
-    margin: 21px 19px 8px 9px;
-    font-size: 9px;
-  }
   .segmented {
-    margin-left: 9px;
-    margin-right: 18px;
+    margin-left: 21px;
+    margin-right: 21px;
     padding: 3px;
     gap: 1px;
   }
@@ -2593,26 +2805,16 @@ dialog > p,
     width: 12px;
     height: 12px;
   }
-  .play-reference {
-    grid-column: 2;
-    width: auto;
-    margin: 10px 18px 0 9px;
-    padding: 11px 7px;
-    font-size: 11px;
-    min-height: 44px;
-    gap: 5px;
-  }
   .play-reference svg {
     width: 13px;
     height: 13px;
   }
   .volume-control {
-    grid-column: 2;
-    margin: 17px 18px 5px 9px;
+    margin: 17px 21px 5px;
     gap: 7px;
   }
   .volume-control span {
-    font-size: 9px;
+    font-size: 11px;
   }
   .tuning-reference {
     grid-column: 1 / -1;
@@ -2806,6 +3008,268 @@ dialog > p,
   }
   .current-pitch .pitch-hz {
     font-size: 9px;
+  }
+}
+/* Mobile practice keeps the chart and its essential controls in one surface. */
+@media (max-width: 760px) {
+  .sidebar {
+    background: #0b111b;
+    backdrop-filter: none;
+  }
+  .topbar {
+    position: relative;
+    z-index: 1;
+    background: var(--ink);
+    height: 44px;
+    padding: 0 15px;
+    gap: 2px;
+  }
+  .topbar .privacy {
+    display: none;
+  }
+  .topbar > span:first-child {
+    margin-right: auto;
+  }
+  .topbar .studio-label,
+  .topbar .slash {
+    display: none;
+  }
+  .mobile-import {
+    display: grid;
+  }
+  .topbar .help-icon {
+    width: 44px;
+    height: 44px;
+  }
+  .page {
+    padding: 8px 12px 0;
+  }
+  .page-heading {
+    display: none;
+  }
+  .workspace {
+    gap: 16px;
+  }
+  .tuner-card > .card-header {
+    padding: 8px 14px 0;
+    min-height: 44px;
+  }
+  .tuner-card .card-header h2 {
+    font-size: 13px;
+  }
+  .tuner-card .chart-expand-button {
+    min-width: 40px;
+    min-height: 36px;
+    padding: 8px;
+  }
+  .pitch-readout {
+    min-height: 70px;
+    padding: 7px 18px 5px;
+  }
+  .current-pitch .readout-label,
+  .tuning-readout > .readout-label {
+    display: none;
+  }
+  #live-note {
+    font-size: 38px;
+  }
+  .tuning-readout {
+    gap: 5px;
+  }
+  .tuning-readout strong {
+    font-size: 26px;
+  }
+  #tuning-status {
+    font-size: 10px;
+  }
+  .pitch-chart {
+    height: clamp(170px, calc(100svh - 398px), 410px);
+    padding: 0 8px 0 0;
+  }
+  #pitch-canvas {
+    height: calc(100% - 34px);
+  }
+  .chart-legend {
+    margin-top: 3px;
+    margin-left: 20px;
+    font-size: 9px;
+  }
+  .chart-window {
+    display: none;
+  }
+  .chart-empty {
+    top: 39%;
+    padding: 0 12px;
+  }
+  .chart-empty .empty-mic {
+    width: 34px;
+    height: 34px;
+    margin-bottom: 4px;
+  }
+  .chart-empty .empty-mic svg {
+    width: 16px;
+    height: 16px;
+  }
+  .chart-empty .empty-mic b {
+    inset: -5px;
+  }
+  .chart-empty .empty-mic b:last-child {
+    inset: -11px;
+  }
+  .chart-empty strong {
+    font-size: 14px;
+  }
+  .chart-empty > span:last-child {
+    font-size: 11px;
+  }
+  .target-dock {
+    grid-template-columns: 1fr auto;
+    gap: 4px 10px;
+    padding: 10px 12px;
+    margin: 5px 12px 0;
+  }
+  .target-dock .dock-label {
+    grid-column: 1;
+    grid-row: 1;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .target-dock .target-frequency {
+    font-size: 10px;
+    margin: 0;
+  }
+  .target-dock .target-selector {
+    grid-column: 1;
+    grid-row: 2;
+    justify-content: start;
+    gap: 10px;
+  }
+  .target-dock .target-selector strong {
+    font-size: 30px;
+    min-width: 50px;
+    display: block;
+  }
+  .target-dock .target-selector strong span {
+    font-size: 20px;
+  }
+  .target-dock .target-selector > div > span {
+    display: none;
+  }
+  .target-dock .play-reference {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    min-width: 120px;
+    font-size: 12px;
+    padding: 12px;
+  }
+  .tuner-bottom {
+    margin: 0 12px;
+    padding: 10px 0 12px;
+    gap: 10px;
+    border: 0;
+  }
+  .tuner-bottom > span {
+    display: none;
+  }
+  .tuner-bottom .button {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    padding: 11px 10px;
+    min-height: 44px;
+  }
+  .tuner-bottom .mic-settings {
+    margin-left: 0;
+    color: #9eafc8;
+  }
+  .song-practice-dock {
+    margin: 5px 12px 0;
+    padding: 11px 12px 0;
+  }
+  .song-practice-dock .score-controls {
+    gap: 12px;
+    padding: 0 0 10px;
+  }
+  .song-practice-dock .score-controls label {
+    font-size: 10px;
+    gap: 5px;
+  }
+  .song-practice-dock .score-controls select {
+    font-size: 16px;
+    padding: 7px 9px;
+    min-height: 40px;
+  }
+  .song-practice-dock .score-controls input[type="range"] {
+    min-height: 30px;
+  }
+  .song-transport {
+    gap: 8px;
+  }
+  .song-transport .button {
+    min-height: 44px;
+    font-size: 12px;
+    padding: 10px;
+  }
+  .song-practice-dock .song-feedback {
+    font-size: 11px;
+    padding: 8px 0;
+    line-height: 1.55;
+  }
+  body[data-mode="songs"] .pitch-chart {
+    height: clamp(140px, calc(100svh - 495px), 330px);
+  }
+  .chart-focus-dialog .pitch-chart,
+  body[data-mode="songs"] .chart-focus-dialog .pitch-chart {
+    height: auto;
+    min-height: 100px;
+  }
+  .chart-focus-dialog .target-dock,
+  .chart-focus-dialog .song-practice-dock {
+    flex-shrink: 0;
+  }
+  .chart-focus-dialog .tuner-bottom {
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  #settings-dialog {
+    padding: 23px 20px;
+  }
+  .settings-pair {
+    gap: 10px;
+  }
+  .settings-section .field,
+  .settings-advanced .field {
+    font-size: 12px;
+  }
+  .settings-advanced {
+    padding: 0 13px;
+  }
+  .settings-actions .button {
+    padding: 11px 10px;
+    font-size: 12px;
+  }
+}
+@media (max-width: 370px) {
+  .target-dock {
+    gap: 4px 6px;
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+  .target-dock .target-selector {
+    gap: 4px;
+  }
+  .target-dock .play-reference {
+    min-width: 108px;
+    padding: 11px 8px;
+    font-size: 11px;
+  }
+  .target-dock .target-selector strong {
+    min-width: 44px;
+  }
+  .settings-pair {
+    grid-template-columns: 1fr;
+    gap: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {
