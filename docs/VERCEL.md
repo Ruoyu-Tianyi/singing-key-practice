@@ -16,6 +16,20 @@ Auralis 前端是 Vite 静态网站，可部署到 Vercel，并通过 HTTPS 在�
 
 连接 GitHub 后，后续对 `main` 的推送会触发 Vercel 的生产构建。生产地址应使用 Vercel 项目页面确认的域名；预览地址可能需要 Vercel 账号登录。公开练习入口应使用允许公众访问的生产域名，并先在未登录窗口检查访问。
 
+## 自定义域名
+
+2026-10-24 已将 `auralis.tianyizhou.cn` 添加至现有 `singing-key-practice` 项目的 Production 环境。当前等待域名所有者添加 DNS 记录，尚未确认解析生效或 HTTPS 就绪。
+
+在 `tianyizhou.cn` 的现有 DNS 服务商处添加以下记录；记录值来自 Vercel 此项目的域名配置页面：
+
+| 类型 | 主机记录 | 记录值 |
+| --- | --- | --- |
+| CNAME | `auralis` | `dd6c41cacfe0b244.vercel-dns-017.com.` |
+
+TTL 可使用服务商默认值。保留现有 NS 和其他子域的记录。添加后在 [Vercel 域名设置](https://vercel.com/ruoyu3/singing-key-practice/settings/domains) 刷新检查，确认配置有效及 HTTPS 可访问后再使用新地址。既有 `singing-key-practice.vercel.app` 入口保留。
+
+新域名与原域名的浏览器本地数据相互独立；已有曲谱可先从旧地址导出 JSON，再在新地址导入。
+
 ## 手机和平板使用
 
 - iPhone/iPad 优先使用 Safari，Android 可使用 Chrome。保持页面前台运行；切到后台时工具会停止监听和播放。
