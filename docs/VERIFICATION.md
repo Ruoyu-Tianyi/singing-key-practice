@@ -9,7 +9,11 @@
 - 本地浏览器检查 320×568、360×740、390×844、1440×1000 布局，记录和帮助面板无横向溢出，标题/关闭及底部记录操作可访问，面板内容内部滚动。390px 练习区的曲线、目标音、播放和收音操作仍在首屏。
 - 使用明确标为“界面验证 · 非演唱记录”的本地测试备份完成真实文件选择导入、下载导出并核对 JSON；点击“再练一次”恢复 72 BPM、+2 半音、第 2–5 音，保持麦克风关闭。该测试数据不代表真人演唱成绩，未写入线上入口。
 - 帮助中心展示 0.2.0 版本及设备诊断，反馈与完整指南链接正确；浏览器检查未捕获警告或错误。
-- 自定义域名 CNAME 已解析至 Vercel 指定目标，正常证书校验下 HTTPS 返回 200。部署前新旧域名加载相同的上一版本资源；本轮上线状态另行记录。
+- 自定义域名 CNAME 已解析至 Vercel 指定目标，正常证书校验下 HTTPS 返回 200。
+
+本轮发布源码为 [`252a00bb`](https://github.com/Ruoyu-Tianyi/singing-key-practice/commit/252a00bb907e4bf4438a72b4799424103d5d824d)。[Vercel 部署](https://vercel.com/ruoyu3/singing-key-practice/AqMbGt2bYEkquVZFwBiAMUw6xxH2) 对该提交的 GitHub 状态为 success；[GitHub Actions / Pages](https://github.com/Ruoyu-Tianyi/singing-key-practice/actions/runs/40163289691) 的前端测试、Python 两项测试、构建及发布全部成功。
+
+公开入口 `auralis.tianyizhou.cn` 和 `singing-key-practice.vercel.app` 均返回 200，加载本地构建对应的 `index-DLOF5kqw.js`、`index-A2DcPAzV.css`。公网 390×844 浏览器复验了练习记录空状态、跳转曲谱练习、帮助展开和 0.2.0 诊断信息；无横向溢出、未捕获警告或错误。线上数据保持空白，没有注入本地演示记录。已保存[线上练习记录截图](preview-history.png)。
 
 本轮未接受真实麦克风权限，没有进行实体手机、蓝牙设备、真人试唱或实际拔出设备的验证。音频中断使用模拟轨道事件和 Web Audio 状态验证。Python 服务本轮未修改，既有两项检查由 CI 继续执行。
 

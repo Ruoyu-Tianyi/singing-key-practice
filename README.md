@@ -6,7 +6,7 @@
 
 **v0.2.0**：新增练习记录、最近 7 天概览、载入上次片段重练、记录导入导出，以及帮助与诊断支持；改善系统音频中断、保存失败与练习参数变更时的提示。
 
-[完整使用指南](docs/USER_GUIDE.md) · [迭代路线图](docs/ROADMAP.md) · [参与贡献](CONTRIBUTING.md) · [反馈问题](https://github.com/Ruoyu-Tianyi/singing-key-practice/issues/new?template=bug_report.yml)
+[完整使用指南](docs/USER_GUIDE.md) · [迭代路线图](docs/ROADMAP.md) · [参与贡献](CONTRIBUTING.md) · [反馈问题](https://github.com/Ruoyu-Tianyi/singing-key-practice/issues/new?template=bug_report.yml) · [查看练习记录界面](docs/preview-history.png)
 
 备用入口：[Vercel 原地址](https://singing-key-practice.vercel.app/) · [GitHub Pages](https://ruoyu-tianyi.github.io/singing-key-practice/)。各域名的浏览器本地数据独立，曲谱与练习记录分别支持 JSON 导出、导入迁移，收音设置需重新校准。
 
