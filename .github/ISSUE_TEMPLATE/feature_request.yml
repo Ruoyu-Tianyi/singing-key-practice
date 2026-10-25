@@ -1,0 +1,35 @@
+name: 改进建议
+description: 提出能改善练习体验的功能或交互建议
+title: "[建议] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        欢迎描述具体的练习场景。先查看路线图，已有方向也可以补充使用需求：
+        https://github.com/Ruoyu-Tianyi/singing-key-practice/blob/main/docs/ROADMAP.md
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 你想完成什么练习？
+      description: 例如手机上反复练习一个短句、导入特定声部，或比较同一片段的进步。
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 当前遇到的阻碍
+      description: 说明现在的操作为什么不方便，以及是否有临时做法。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的体验
+      description: 描述完成后应有什么变化；无需提供技术实现方案。
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: 补充信息（可选）
+      description: 常用设备、使用频率或可公开的参考示例。不要附私人数据。

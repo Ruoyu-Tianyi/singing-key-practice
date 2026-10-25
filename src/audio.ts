@@ -189,6 +189,8 @@ function microphoneError(error: unknown): Error {
 export class AudioEngine {
   /** Reference tuning shared by detection and synthesized guide notes. */
   a4 = 440;
+  /** Unexpected device/system interruption; resources are released before notification. */
+  onInterrupted?: (error: Error) => void;
 
   private context: AudioContext | null = null;
   private output: DynamicsCompressorNode | null = null;
@@ -201,6 +203,7 @@ export class AudioEngine {
   private animationFrame: number | null = null;
   private microphoneGeneration = 0;
   private playbackGeneration = 0;
+  private sequenceActive = false;
   private timers = new Set<Timer>();
   private voices = new Set<Voice>();
   private destroyed = false;
@@ -340,6 +343,7 @@ export class AudioEngine {
     if (typeof window === "undefined")
       throw new Error("音频功能需要在浏览器中使用。");
     if (!this.context || this.context.state === "closed") {
+      if (this.context) this.context.onstatechange = null;
       const AudioContextConstructor =
         window.AudioContext ??
         (window as Window & { webkitAudioContext?: typeof AudioContext })
@@ -349,6 +353,17 @@ export class AudioEngine {
       this.context = new AudioContextConstructor({
         latencyHint: "interactive",
       });
+      const createdContext = this.context;
+      createdContext.onstatechange = () => {
+        if (
+          this.context === createdContext &&
+          createdContext.state !== "running"
+        ) {
+          this.interrupt(
+            "声音被系统中断。请返回页面，点击麦克风或播放按钮重新开始。",
+          );
+        }
+      };
       this.output = this.context.createDynamicsCompressor();
       this.output.threshold.value = -12;
       this.output.knee.value = 18;
@@ -370,6 +385,22 @@ export class AudioEngine {
       throw new Error("声音尚未启动。请点击页面中的播放或麦克风按钮后重试。");
     }
     return context;
+  }
+
+  private interrupt(message: string): void {
+    if (
+      this.destroyed ||
+      (!this.stream &&
+        !this.sequenceActive &&
+        !this.timers.size &&
+        !this.voices.size)
+    )
+      return;
+    // A resumed audio clock would no longer agree with the practice timeline.
+    // End the current attempt and require a fresh user action instead.
+    this.stopMicrophone();
+    this.stopPlayback();
+    this.onInterrupted?.(new Error(message));
   }
 
   async startMicrophone(onFrame: (frame: PitchFrame) => void): Promise<void> {
@@ -401,7 +432,31 @@ export class AudioEngine {
         pendingStream.getTracks().forEach((track) => track.stop());
         return;
       }
+      const tracks = pendingStream.getTracks();
+      if (
+        !tracks.length ||
+        tracks.some((track) => track.readyState === "ended")
+      ) {
+        throw new Error("麦克风连接已断开。请检查设备后重新开启麦克风。");
+      }
+      if (context.state !== "running") {
+        throw new Error("声音被系统中断。请返回页面，点击麦克风按钮重新开始。");
+      }
       this.stream = pendingStream;
+      for (const track of tracks) {
+        track.onended = () => {
+          if (generation === this.microphoneGeneration) {
+            this.interrupt("麦克风连接已断开。请检查设备后重新开启麦克风。");
+          }
+        };
+        track.onmute = () => {
+          if (generation === this.microphoneGeneration) {
+            this.interrupt(
+              "麦克风收音被系统暂停。请检查设备后重新开启麦克风。",
+            );
+          }
+        };
+      }
       this.analyser = context.createAnalyser();
       this.analyser.fftSize = this.microphoneOptions.fftSize;
       this.analyser.smoothingTimeConstant = 0;
@@ -415,6 +470,12 @@ export class AudioEngine {
       this.activateMicrophonePreview();
       const tick = (timestamp: number) => {
         if (generation !== this.microphoneGeneration || this.destroyed) return;
+        if (context.state !== "running") {
+          this.interrupt(
+            "声音被系统中断。请返回页面，点击麦克风或播放按钮重新开始。",
+          );
+          return;
+        }
         this.animationFrame = window.requestAnimationFrame(tick);
         const analysis = this.analysis;
         if (analysis) {
@@ -459,7 +520,11 @@ export class AudioEngine {
     this.detachMicrophonePreview();
     this.microphoneSource?.disconnect();
     this.analyser?.disconnect();
-    this.stream?.getTracks().forEach((track) => track.stop());
+    this.stream?.getTracks().forEach((track) => {
+      track.onended = null;
+      track.onmute = null;
+      track.stop();
+    });
     this.microphoneSource = null;
     this.analyser = null;
     this.analysis = null;
@@ -522,6 +587,7 @@ export class AudioEngine {
       throw new Error("曲谱包含无效音符、时值或速度。");
     const context = await this.getContext();
     if (generation !== this.playbackGeneration || this.destroyed) return;
+    this.sequenceActive = true;
     const beatSeconds = 60 / clamp(bpm, 20, 320);
     const countIn = Number.isFinite(options.countIn)
       ? clamp(Math.floor(options.countIn ?? 0), 0, 16)
@@ -570,6 +636,12 @@ export class AudioEngine {
     let nextSongClick = 0;
     const update = () => {
       if (generation !== this.playbackGeneration || this.destroyed) return;
+      if (context.state !== "running") {
+        this.interrupt(
+          "声音被系统中断。请返回页面，点击麦克风或播放按钮重新开始。",
+        );
+        return;
+      }
       const now = context.currentTime;
       const horizon = now + SCHEDULE_LOOKAHEAD_SECONDS;
       // Keep native audio nodes proportional to the near future, even for a
@@ -621,6 +693,7 @@ export class AudioEngine {
         if (generation !== this.playbackGeneration || this.destroyed) return;
       }
       if (now >= end) {
+        this.sequenceActive = false;
         options.onComplete?.();
         return;
       }
@@ -631,6 +704,7 @@ export class AudioEngine {
 
   stopPlayback(): void {
     this.playbackGeneration += 1;
+    this.sequenceActive = false;
     this.timers.forEach((timer) => clearTimeout(timer));
     this.timers.clear();
     const now = this.context?.currentTime ?? 0;
@@ -659,6 +733,7 @@ export class AudioEngine {
     const context = this.context;
     this.context = null;
     this.output = null;
+    if (context) context.onstatechange = null;
     if (context && context.state !== "closed") await context.close();
     this.voices.clear();
   }

@@ -80,6 +80,32 @@ describe("score validation", () => {
     expect(() => validateScore({ ...base, timeSignature: "text" })).toThrow();
     expect(() => validateScore({ ...base, notes: [] })).toThrow();
   });
+  it.each([undefined, "", " \t\n ", "\u3000", 12])(
+    "replaces an empty or non-text id/title (%j) with a usable identity",
+    (value) => {
+      const score = validateScore({ ...base, id: value, title: value });
+      expect(score.id).toMatch(/^score-.+/);
+      expect(score.title).toBe("导入曲谱");
+      // Export/import and startup validation must retain the generated identity.
+      expect(validateScore(JSON.parse(JSON.stringify(score)))).toEqual(score);
+    },
+  );
+  it("trims imported identity fields while preserving bounded nonempty values", () => {
+    const score = validateScore({
+      ...base,
+      id: "  my-song  ",
+      title: "  我的旋律 \n",
+    });
+    expect(score.id).toBe("my-song");
+    expect(score.title).toBe("我的旋律");
+    const long = validateScore({
+      ...base,
+      id: `a${" ".repeat(100)}b`,
+      title: "曲".repeat(200),
+    });
+    expect(long.id).toBe("a");
+    expect(long.title).toHaveLength(120);
+  });
 });
 
 const wrap = (measures: string) =>

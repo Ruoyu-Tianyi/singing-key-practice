@@ -240,6 +240,7 @@ function mockAudioBrowser() {
   const oscillators: ReturnType<typeof oscillator>[] = [];
   const context = {
     state: "running",
+    onstatechange: null as (() => void) | null,
     currentTime: 10,
     sampleRate: 48000,
     destination: node(),
@@ -317,9 +318,22 @@ function mockLiveMicrophone(frequency = 440, amplitude = 0.004) {
     createMediaStreamSource: vi.fn(() => source),
   });
   const stopTrack = vi.fn();
-  const getUserMedia = vi
-    .fn()
-    .mockResolvedValue({ getTracks: () => [{ stop: stopTrack }] });
+  const tracks: {
+    readyState: string;
+    stop: typeof stopTrack;
+    onended: (() => void) | null;
+    onmute: (() => void) | null;
+  }[] = [];
+  const getUserMedia = vi.fn().mockImplementation(async () => {
+    const track = {
+      readyState: "live",
+      stop: stopTrack,
+      onended: null,
+      onmute: null,
+    };
+    tracks.push(track);
+    return { getTracks: () => [track] };
+  });
   vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
   const step = (timestamp: number) => {
     const callback = scheduled;
@@ -332,6 +346,7 @@ function mockLiveMicrophone(frequency = 440, amplitude = 0.004) {
     analysers,
     source,
     stopTrack,
+    tracks,
     getUserMedia,
     step,
   };
@@ -690,6 +705,167 @@ describe("live microphone configuration", () => {
 });
 
 describe("audio lifecycle and musical scheduling", () => {
+  it.each(["ended", "mute"] as const)(
+    "releases input, preview and playback when the microphone emits %s",
+    async (event) => {
+      vi.useFakeTimers();
+      const browser = mockLiveMicrophone();
+      const engine = new AudioEngine();
+      const onFrame = vi.fn();
+      const onPreview = vi.fn();
+      const onComplete = vi.fn();
+      const onInterrupted = vi.fn();
+      engine.onInterrupted = onInterrupted;
+      engine.setMicrophonePreview(DEFAULT_MICROPHONE_SETTINGS, onPreview);
+      await engine.startMicrophone(onFrame);
+      await engine.scheduleNotes([{ midi: 60, beats: 4 }], 120, "piano", {
+        onComplete,
+      });
+      browser.step(0);
+      const track = browser.tracks[0];
+      const staleHandler = event === "ended" ? track.onended! : track.onmute!;
+      staleHandler();
+      expect(onInterrupted).toHaveBeenCalledOnce();
+      expect(onInterrupted.mock.calls[0][0].message).toMatch(
+        /麦克风.*重新开启/,
+      );
+      expect(engine.microphoneSampleRate).toBeNull();
+      expect(browser.stopTrack).toHaveBeenCalledOnce();
+      expect(
+        browser.analysers.every(
+          (node) => node.disconnect.mock.calls.length === 1,
+        ),
+      ).toBe(true);
+      expect(track.onended).toBeNull();
+      expect(track.onmute).toBeNull();
+      browser.context.currentTime = 30;
+      browser.step(100);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(onFrame).toHaveBeenCalledOnce();
+      expect(onPreview).toHaveBeenCalledOnce();
+      expect(onComplete).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      // Reopening works, and a queued event from the old stream is ignored.
+      await engine.startMicrophone(onFrame);
+      staleHandler();
+      browser.step(200);
+      expect(onFrame).toHaveBeenCalledTimes(2);
+      expect(onInterrupted).toHaveBeenCalledOnce();
+      expect(engine.microphoneSampleRate).toBe(48000);
+      engine.stopMicrophone();
+      expect(browser.tracks[1].onended).toBeNull();
+      expect(onInterrupted).toHaveBeenCalledOnce();
+      await engine.close();
+    },
+  );
+
+  it.each(["suspended", "interrupted", "closed"])(
+    "stops active audio on a system %s event without producing stale frames",
+    async (state) => {
+      const browser = mockLiveMicrophone();
+      const engine = new AudioEngine();
+      const onFrame = vi.fn();
+      const onInterrupted = vi.fn();
+      engine.onInterrupted = onInterrupted;
+      await engine.startMicrophone(onFrame);
+      browser.step(0);
+      browser.context.state = state;
+      browser.context.onstatechange?.();
+      browser.step(50);
+      expect(onFrame).toHaveBeenCalledOnce();
+      expect(onInterrupted).toHaveBeenCalledOnce();
+      expect(engine.microphoneSampleRate).toBeNull();
+      browser.context.onstatechange?.();
+      expect(onInterrupted).toHaveBeenCalledOnce();
+      await engine.startMicrophone(onFrame);
+      expect(browser.context.state).toBe("running");
+      browser.step(100);
+      expect(onFrame).toHaveBeenCalledTimes(2);
+      await engine.close();
+      expect(browser.context.onstatechange).toBeNull();
+    },
+  );
+
+  it("detects a suspended context before analysing a frame even if its event is delayed", async () => {
+    const browser = mockLiveMicrophone();
+    const engine = new AudioEngine();
+    const onFrame = vi.fn();
+    engine.onInterrupted = vi.fn();
+    await engine.startMicrophone(onFrame);
+    browser.context.state = "suspended";
+    browser.step(0);
+    expect(onFrame).not.toHaveBeenCalled();
+    expect(engine.onInterrupted).toHaveBeenCalledOnce();
+    await engine.close();
+  });
+
+  it("cancels silent practice scheduling when its audio clock is interrupted", async () => {
+    vi.useFakeTimers();
+    const { context } = mockAudioBrowser();
+    const engine = new AudioEngine();
+    const onComplete = vi.fn();
+    engine.onInterrupted = vi.fn();
+    await engine.scheduleNotes([{ midi: null, beats: 4 }], 120, "piano", {
+      onComplete,
+    });
+    context.state = "interrupted";
+    // The timer provides a fallback if a browser delays statechange dispatch.
+    await vi.advanceTimersByTimeAsync(20);
+    expect(engine.onInterrupted).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+    context.currentTime = 30;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(onComplete).not.toHaveBeenCalled();
+    await engine.close();
+  });
+
+  it("rejects a stream that ends while its permission request is pending", async () => {
+    const browser = mockLiveMicrophone();
+    browser.getUserMedia.mockResolvedValueOnce({
+      getTracks: () => [{ readyState: "ended", stop: browser.stopTrack }],
+    });
+    const engine = new AudioEngine();
+    await expect(engine.startMicrophone(vi.fn())).rejects.toThrow(
+      "麦克风连接已断开",
+    );
+    expect(engine.microphoneSampleRate).toBeNull();
+    expect(browser.stopTrack).toHaveBeenCalledOnce();
+    await engine.close();
+  });
+
+  it("rejects a pending microphone startup if the system interrupts audio before permission returns", async () => {
+    const browser = mockLiveMicrophone();
+    let grant!: (stream: MediaStream) => void;
+    browser.getUserMedia.mockReturnValueOnce(
+      new Promise<MediaStream>((resolve) => {
+        grant = resolve;
+      }),
+    );
+    const engine = new AudioEngine();
+    const starting = engine.startMicrophone(vi.fn());
+    await Promise.resolve();
+    browser.context.state = "interrupted";
+    grant({
+      getTracks: () => [{ stop: browser.stopTrack }],
+    } as unknown as MediaStream);
+    await expect(starting).rejects.toThrow("声音被系统中断");
+    expect(browser.stopTrack).toHaveBeenCalledOnce();
+    expect(browser.requestAnimationFrame).not.toHaveBeenCalled();
+    await engine.close();
+  });
+
+  it("ignores context state changes after an intentional stop", async () => {
+    const browser = mockLiveMicrophone();
+    const engine = new AudioEngine();
+    engine.onInterrupted = vi.fn();
+    await engine.startMicrophone(vi.fn());
+    engine.stopMicrophone();
+    browser.context.state = "suspended";
+    browser.context.onstatechange?.();
+    expect(engine.onInterrupted).not.toHaveBeenCalled();
+    await engine.close();
+  });
+
   it.each(["stop", "close"])(
     "releases a late microphone permission result after %s",
     async (action) => {

@@ -1,4 +1,14 @@
 import "./style.css";
+import { APP_VERSION, helpContent, historyDialogMarkup } from "./support";
+import {
+  addPracticeRecord,
+  createPracticeRecord,
+  readPracticeHistory,
+  summarizePracticeHistory,
+  exportPracticeHistory,
+  importPracticeHistory,
+  type PracticeRecord,
+} from "./practice-history";
 import {
   recommendMicrophoneSettings,
   type CalibrationSample,
@@ -60,6 +70,7 @@ import {
   builtinScores,
   importScore,
   parseJianpu,
+  validateScore,
   type PracticeScore,
   type ScoreNote,
 } from "./score";
@@ -161,6 +172,7 @@ let lastScoreTime = 0,
   sessionToken = 0,
   monitorStarted = 0,
   micGeneration = 0;
+let loopTimer = 0;
 let practiceNotes: ScoreNote[] = [],
   practiceOnsets: number[] = [],
   practiceBeatMs = 750;
@@ -171,18 +183,50 @@ let stats: { seconds: number; sessions: number; best: number; date: string } = {
   date: "",
 };
 let customScores: PracticeScore[] = [];
+let practiceHistory: PracticeRecord[] = [];
+let historySaved = true;
+let activePractice: Pick<
+  PracticeRecord,
+  "title" | "scoreId" | "bpm" | "transpose" | "rangeStart" | "rangeEnd"
+> | null = null;
 try {
   const saved = JSON.parse(localStorage.getItem("shengzhun-stats") || "null");
-  if (saved && Number.isFinite(saved.seconds)) stats = saved;
+  if (saved && Number.isFinite(saved.seconds) && saved.seconds >= 0) {
+    stats = {
+      seconds: saved.seconds,
+      sessions: Number.isFinite(saved.sessions)
+        ? Math.max(0, saved.sessions)
+        : 0,
+      best: Number.isFinite(saved.best)
+        ? Math.max(0, Math.min(100, saved.best))
+        : 0,
+      date: typeof saved.date === "string" ? saved.date : "",
+    };
+  }
+} catch {
+  /* Unavailable or damaged storage must not prevent startup. */
+}
+try {
   const savedScores = JSON.parse(
     localStorage.getItem("shengzhun-scores") || "[]",
   );
   if (Array.isArray(savedScores))
-    customScores = savedScores.filter(
-      (s) => Array.isArray(s.notes) && s.notes.length < 10000,
-    );
+    customScores = savedScores.flatMap((value) => {
+      try {
+        return [validateScore(value)];
+      } catch {
+        return [];
+      }
+    });
 } catch {
   /* storage can be unavailable in private mode */
+}
+try {
+  practiceHistory = readPracticeHistory(
+    localStorage.getItem("auralis-practice-history"),
+  );
+} catch {
+  historySaved = false;
 }
 let score = builtinScores[0];
 let editDraft: ScoreNote[] = [],
@@ -270,6 +314,26 @@ app.innerHTML = `
 </dialog>
 <dialog id="help-dialog" aria-labelledby="help-dialog-title"><div class="dialog-head"><h2 id="help-dialog-title">从第一个音开始</h2><button class="icon-button" data-close aria-label="关闭">${i("x")}</button></div><div class="help-content"><h3>实时音准仪</h3><p>开启麦克风并允许浏览器录音。音名和曲线显示当前音高，音分表示距离最近标准音的偏差。绿色表示误差在 ±25 音分以内；音量太低、噪声或多人合唱会降低准确度。</p><h3>标准音模唱</h3><p>点击琴键或播放目标音，再用自然的声音模唱。「标准音模唱」模式会把偏差对准你选的目标音。钢琴与手风琴采用本地合成音色。</p><h3>曲谱练习</h3><p>选一首曲谱、调整速度与片段。先听示范，再开始练习。4 拍预备后跟着音符唱，默认不播放旋律，避免扬声器串音。音准命中率按有效发声采样计算，覆盖率表示目标发声时长中检测到有效声音的比例；节奏参考首次发声及换音时间，连续同音无法可靠区分。</p><h3>图片和 PDF</h3><p>简谱使用文字 OCR，必须校对八度和时值。五线谱需要附带的 Audiveris 服务，识别后也需要核对；复杂多声部只取选定主旋律，不支持完整乐队总谱。更准确的方式是从制谱软件导出 MusicXML。</p><h3>数据与隐私</h3><p>麦克风声音不上传、不录制。自定义曲谱和今日练习时长保存在当前浏览器中；没有账号与跨设备同步。电脑、平板、手机均可通过同一 HTTPS 网址访问。</p></div></dialog>`;
 
+app.insertAdjacentHTML("beforeend", historyDialogMarkup);
+document.querySelector("#help-dialog .help-content")!.innerHTML = helpContent;
+document
+  .querySelector(".topbar [data-action='settings']")!
+  .insertAdjacentHTML(
+    "beforebegin",
+    `<button class="help-icon" data-action="history" aria-label="练习记录">${i("timer")}</button>`,
+  );
+document
+  .querySelector(".practice-guide")!
+  .insertAdjacentHTML(
+    "beforeend",
+    `<button class="journal-entry" data-action="history">${i("timer")}查看练习记录 ${i("chevron-right")}</button>`,
+  );
+document
+  .querySelector(".tuner-bottom")!
+  .insertAdjacentHTML(
+    "beforebegin",
+    '<p id="audio-error" class="audio-error" role="status" hidden></p>',
+  );
 const settingsDialog = $<HTMLDialogElement>("settings-dialog");
 const previewCanvas = $<HTMLCanvasElement>("mic-preview-canvas");
 const previewContext = previewCanvas.getContext("2d")!;
@@ -821,6 +885,95 @@ function toast(message: string) {
   toastTimer = window.setTimeout(() => ($("toast").hidden = true), 5000);
 }
 let toastTimer = 0;
+
+function downloadJson(text: string, filename: string) {
+  const url = URL.createObjectURL(
+    new Blob([text], { type: "application/json" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function savePracticeHistory() {
+  try {
+    localStorage.setItem(
+      "auralis-practice-history",
+      JSON.stringify(practiceHistory),
+    );
+    historySaved = true;
+  } catch {
+    historySaved = false;
+    toast("练习记录暂未保存到浏览器，请在练习记录中导出备份。");
+  }
+}
+
+function renderPracticeHistory() {
+  const summary = summarizePracticeHistory(practiceHistory, new Date());
+  const minutes =
+    summary.durationSeconds > 0 && summary.durationSeconds < 60
+      ? "&lt;1"
+      : Math.floor(summary.durationSeconds / 60);
+  $("history-summary").innerHTML =
+    `<div><strong>${summary.sessions}</strong><span>完成练习</span></div><div><strong>${minutes}</strong><span>练习分钟</span></div><div><strong>${summary.practiceDays}<small> / 7</small></strong><span>练习天数</span></div>`;
+  const max = Math.max(1, ...summary.days.map((day) => day.sessions));
+  $("history-week").innerHTML = summary.days
+    .map(
+      (day) =>
+        `<div class="journal-day" aria-label="${escape(day.date)}，${day.sessions} 次练习"><span>${day.sessions || "·"}</span><div><b style="height:${day.sessions ? Math.max(8, (day.sessions / max) * 100) : 3}%" class="${day.sessions ? "has-practice" : ""}"></b></div><small>${Number(day.date.slice(-2))}日</small></div>`,
+    )
+    .join("");
+  $("history-count").textContent = `${practiceHistory.length} / 100`;
+  $("history-storage-warning").hidden = historySaved;
+  $("history-list").innerHTML = practiceHistory.length
+    ? practiceHistory
+        .map((record) => {
+          const available = [...builtinScores, ...customScores].some(
+            (s) => s.id === record.scoreId && s.notes.length >= record.rangeEnd,
+          );
+          const date = new Date(record.completedAt).toLocaleString("zh-CN", {
+            month: "numeric",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          return `<article class="journal-record"><div class="journal-record-heading"><div><h4>${escape(record.title)}</h4><time datetime="${escape(record.completedAt)}">${escape(date)}</time></div><button class="button secondary" data-action="retry-history" data-record-id="${escape(record.id)}" ${available ? "" : "disabled"}>${available ? "再练一次" : "需导入原曲谱"}</button></div><p class="journal-record-meta">${record.bpm} BPM · 第 ${record.rangeStart}–${record.rangeEnd} 音 · ${record.transpose === 0 ? "原调" : `${record.transpose > 0 ? "+" : ""}${record.transpose} 半音`}</p><dl><div><dt>音准命中</dt><dd>${record.pitchAccuracy === null ? "—" : `${record.pitchAccuracy}%`}</dd></div><div><dt>发声覆盖</dt><dd>${record.coverage}%</dd></div><div><dt>换音偏差</dt><dd>${record.rhythmOffsetMs === null ? "—" : `${record.rhythmOffsetMs} ms`}</dd></div></dl>${record.pitchAccuracy === null ? '<p class="journal-no-voice">本次未检测到有效人声，可校准收音后重试。</p>' : ""}</article>`;
+        })
+        .join("")
+    : `<div class="journal-empty">${i("music-2")}<h3>给下一次进步，留个起点</h3><p>完成一遍曲谱或片段练习，记录就会出现在这里。示范和中途停止不会计入。</p><button class="button primary" data-action="history-start">去练一小段</button></div>`;
+  document.querySelector<HTMLButtonElement>(
+    '[data-action="export-history"]',
+  )!.disabled = !practiceHistory.length;
+  refreshIcons();
+}
+
+function updateDiagnostics() {
+  const details = {
+    application: `Auralis ${APP_VERSION}`,
+    browser: navigator.userAgent,
+    secureContext: window.isSecureContext,
+    microphoneSupported: Boolean(navigator.mediaDevices?.getUserMedia),
+    audioSupported: Boolean(
+      window.AudioContext ||
+        (window as Window & { webkitAudioContext?: unknown })
+          .webkitAudioContext,
+    ),
+    microphoneState: mic ? "listening" : micBusy ? "connecting" : "off",
+    sampleRate: engine.microphoneSampleRate,
+    tuningA4: engine.a4,
+    latencyMs: inputLatencyMs,
+    microphoneSettings,
+    version: APP_VERSION,
+  };
+  $<HTMLTextAreaElement>("support-diagnostics").value = JSON.stringify(
+    details,
+    null,
+    2,
+  );
+}
+
 function volume() {
   return Number($<HTMLInputElement>("volume").value) / 100;
 }
@@ -828,8 +981,10 @@ function persist() {
   try {
     localStorage.setItem("shengzhun-stats", JSON.stringify(stats));
     localStorage.setItem("shengzhun-scores", JSON.stringify(customScores));
+    return true;
   } catch {
     toast("浏览器存储不可用，关闭页面后曲谱可能不会保留。");
+    return false;
   }
 }
 function localDate() {
@@ -988,6 +1143,9 @@ function stopMic() {
     cancelCalibration("收音已停止，校准已取消。原参数保留。", false);
   }
   ++micGeneration;
+  clearTimeout(loopTimer);
+  loopTimer = 0;
+  if (!playing) ++sessionToken;
   if (playing && practicing) stopSong();
   engine.stopMicrophone();
   if (monitorStarted) addTime((performance.now() - monitorStarted) / 1000);
@@ -1001,6 +1159,8 @@ function stopMic() {
   updateMic();
 }
 function updateMic() {
+  $("audio-error").hidden = !micError;
+  $("audio-error").textContent = micError;
   $("mic-button").innerHTML =
     i(mic || micBusy ? "square" : "mic") +
     (micBusy ? "取消连接" : mic ? "停止监听" : "开启麦克风");
@@ -1013,6 +1173,16 @@ function updateMic() {
   $("chart-empty").hidden = mic || playing;
   refreshIcons();
 }
+engine.onInterrupted = (error) => {
+  stopSong();
+  stopMic();
+  micError = error.message;
+  $("song-feedback").textContent =
+    "音频已中断，本次未完成的练习不会计入记录。重新开启后可再练一次。";
+  updateMic();
+  if (settingsDialog.open) renderMicrophonePreview(performance.now(), true);
+  toast(error.message);
+};
 let cachedScore: PracticeScore | undefined;
 let cachedSelectionKey = "";
 let cachedNotes: ScoreNote[] = [];
@@ -1142,10 +1312,14 @@ function storeScore(next: PracticeScore) {
   stopSong();
   score = next;
   customScores = [...customScores.filter((s) => s.id !== next.id), next];
-  persist();
+  const saved = persist();
   renderScores();
   setView("songs");
-  toast(`已导入「${next.title}」，请试听并核对音符与节奏。`);
+  toast(
+    saved
+      ? `已导入「${next.title}」，请试听并核对音符与节奏。`
+      : `「${next.title}」已用于本次练习，但浏览器未能保存，请导出备份。`,
+  );
 }
 function renderEditPage() {
   $("edit-rows").innerHTML = editDraft
@@ -1199,6 +1373,9 @@ function collectEditPage(): boolean {
 }
 function stopSong() {
   sessionToken++;
+  clearTimeout(loopTimer);
+  loopTimer = 0;
+  activePractice = null;
   engine.stopPlayback();
   playing = practicing = false;
   activeIndex = -1;
@@ -1233,10 +1410,37 @@ async function startSong(practice: boolean) {
     stopSong();
     return;
   }
+  clearTimeout(loopTimer);
+  loopTimer = 0;
+  const rangeStart = Number($<HTMLInputElement>("range-start").value);
+  const rangeEnd = Number($<HTMLInputElement>("range-end").value);
+  if (
+    !Number.isInteger(rangeStart) ||
+    !Number.isInteger(rangeEnd) ||
+    rangeStart < 1 ||
+    rangeEnd < rangeStart ||
+    rangeEnd > score.notes.length
+  ) {
+    toast(
+      `片段请输入 1–${score.notes.length} 之间的完整音符序号，结束不能早于起始。`,
+    );
+    return;
+  }
   const token = ++sessionToken;
+  const requestedScore = score;
+  const requestedTranspose = transpose;
   if (practice && !mic) {
     await toggleMic();
-    if (!mic || token !== sessionToken || view !== "songs" || document.hidden)
+    if (
+      !mic ||
+      token !== sessionToken ||
+      view !== "songs" ||
+      document.hidden ||
+      score !== requestedScore ||
+      transpose !== requestedTranspose ||
+      Number($<HTMLInputElement>("range-start").value) !== rangeStart ||
+      Number($<HTMLInputElement>("range-end").value) !== rangeEnd
+    )
       return;
   }
   const notes = selectedNotes();
@@ -1253,6 +1457,16 @@ async function startSong(practice: boolean) {
   lastMidi = null;
   noteEvents = [];
   const bpm = Number($<HTMLInputElement>("bpm").value);
+  activePractice = practice
+    ? {
+        title: score.title || "未命名曲谱",
+        scoreId: score.id || "unknown",
+        bpm,
+        transpose,
+        rangeStart,
+        rangeEnd,
+      }
+    : null;
   const guide = $<HTMLInputElement>("guide").checked;
   practiceNotes = notes;
   practiceBeatMs = 60000 / bpm;
@@ -1297,11 +1511,13 @@ async function startSong(practice: boolean) {
       },
     });
   } catch (error) {
+    if (token !== sessionToken) return;
     stopSong();
     toast(error instanceof Error ? error.message : "播放失败，请重试。");
   }
 }
 function finishSong(practice: boolean, notes: ScoreNote[]) {
+  if (!playing) return;
   playing = practicing = false;
   activeIndex = -1;
   updateSongButtons();
@@ -1322,9 +1538,38 @@ function finishSong(practice: boolean, notes: ScoreNote[]) {
           noteEvents.reduce((s, e) => s + e.error, 0) / noteEvents.length,
         )
       : null;
+    const evaluatedPitch = pitchTotal && coverage > 0 ? pitch : null;
     $("practice-result").hidden = false;
     $("practice-result").innerHTML =
-      `<div><span>音准命中率</span><strong>${pitchTotal ? `${pitch}%` : "—"}</strong></div><div><span>有效发声覆盖</span><strong>${coverage}%</strong></div><div><span>换音平均偏差</span><strong>${rhythm === null ? "—" : `${rhythm}<small> ms</small>`}</strong></div><p>${pitchTotal ? "只统计有效人声；同音连续音符的节奏检测仅作参考。" : "未检测到有效人声，暂不能评估音准。请检查输入状态并佩戴耳机。"}</p>`;
+      `<div><span>音准命中率</span><strong>${evaluatedPitch !== null ? `${evaluatedPitch}%` : "—"}</strong></div><div><span>有效发声覆盖</span><strong>${coverage}%</strong></div><div><span>换音平均偏差</span><strong>${rhythm === null ? "—" : `${rhythm}<small> ms</small>`}</strong></div><p>${evaluatedPitch !== null ? "只统计有效人声；同音连续音符的节奏检测仅作参考。" : "未检测到足够的有效人声，暂不能评估音准。请检查输入状态并佩戴耳机。"}</p>`;
+    $("practice-result").insertAdjacentHTML(
+      "beforeend",
+      '<button class="text-button result-history" data-action="history">查看练习记录 →</button>',
+    );
+    if (activePractice) {
+      try {
+        practiceHistory = addPracticeRecord(
+          practiceHistory,
+          createPracticeRecord({
+            ...activePractice,
+            id: crypto.randomUUID(),
+            completedAt: new Date().toISOString(),
+            durationSeconds:
+              (notes.reduce((sum, n) => sum + n.beats, 0) * 60) /
+              activePractice.bpm,
+            pitchAccuracy: evaluatedPitch,
+            coverage,
+            rhythmOffsetMs: rhythm,
+          }),
+        );
+        savePracticeHistory();
+        if ($<HTMLDialogElement>("history-dialog").open)
+          renderPracticeHistory();
+      } catch {
+        toast("本次练习已完成，但无法生成记录；请通过使用指南反馈问题。");
+      }
+    }
+    activePractice = null;
     stats.sessions++;
     stats.best = Math.max(stats.best, pitch);
     persist();
@@ -1334,7 +1579,8 @@ function finishSong(practice: boolean, notes: ScoreNote[]) {
     : "示范结束。准备好了，就开始练习。";
   if (loop) {
     const token = sessionToken;
-    window.setTimeout(() => {
+    loopTimer = window.setTimeout(() => {
+      loopTimer = 0;
       if (
         token === sessionToken &&
         !playing &&
@@ -1505,7 +1751,71 @@ document.addEventListener("click", async (event) => {
       break;
     }
     case "help":
+      updateDiagnostics();
       $<HTMLDialogElement>("help-dialog").showModal();
+      break;
+    case "copy-diagnostics":
+      try {
+        await navigator.clipboard.writeText(
+          $<HTMLTextAreaElement>("support-diagnostics").value,
+        );
+        toast("诊断信息已复制，你可以检查后附在问题反馈中。");
+      } catch {
+        $<HTMLTextAreaElement>("support-diagnostics").select();
+        toast("浏览器未允许自动复制，已选中诊断信息，请手动复制。");
+      }
+      break;
+    case "history":
+      renderPracticeHistory();
+      $<HTMLDialogElement>("history-dialog").showModal();
+      break;
+    case "history-start":
+      $<HTMLDialogElement>("history-dialog").close();
+      setView("songs");
+      $("practice-button").focus();
+      break;
+    case "retry-history": {
+      const record = practiceHistory.find(
+        (item) => item.id === el.dataset.recordId,
+      );
+      const previousScore = [...builtinScores, ...customScores].find(
+        (item) => item.id === record?.scoreId,
+      );
+      if (
+        !record ||
+        !previousScore ||
+        previousScore.notes.length < record.rangeEnd
+      ) {
+        toast("请先导入这条记录对应的原曲谱，再重新选择片段。");
+        break;
+      }
+      stopSong();
+      score = previousScore;
+      transpose = record.transpose;
+      $<HTMLSelectElement>("transpose").value = String(transpose);
+      renderScores();
+      $<HTMLInputElement>("bpm").value = String(record.bpm);
+      $("bpm-text").textContent = `${record.bpm} BPM`;
+      $<HTMLInputElement>("range-start").value = String(record.rangeStart);
+      $<HTMLInputElement>("range-end").value = String(record.rangeEnd);
+      $<HTMLDialogElement>("history-dialog").close();
+      setView("songs");
+      $("practice-result").hidden = true;
+      $("song-feedback").textContent =
+        "已载入上次的速度、移调与片段。准备好后点击开始练习。";
+      $("practice-button").focus();
+      break;
+    }
+    case "export-history":
+      downloadJson(
+        exportPracticeHistory(practiceHistory),
+        `auralis-practice-${localDate()}.json`,
+      );
+      $("history-message").textContent =
+        "已发起下载：备份包含记录，不包含曲谱与收音设置。";
+      break;
+    case "import-history":
+      $<HTMLInputElement>("history-file").click();
       break;
     case "save-editor":
       try {
@@ -1555,20 +1865,30 @@ document.addEventListener("click", async (event) => {
       }
       const nextMicrophone = readMicrophoneSettings();
       if (!nextMicrophone) break;
+      const interruptedPractice = playing && practicing;
+      if (interruptedPractice) stopSong();
       microphoneSettings = engine.configureMicrophone(nextMicrophone);
       engine.a4 = a4;
       inputLatencyMs = latency;
       $("a4-display").textContent = String(a4);
       updateTarget();
+      let saved = true;
       try {
         localStorage.setItem(
           "shengzhun-settings",
           JSON.stringify({ a4, latency, microphone: microphoneSettings }),
         );
-      } catch {}
+      } catch {
+        saved = false;
+      }
       $<HTMLDialogElement>("settings-dialog").close();
       toast(
-        mic ? "练习设置已保存，收音参数已用于当前监听。" : "练习设置已保存。",
+        (saved
+          ? mic
+            ? "练习设置已保存，收音参数已用于当前监听。"
+            : "练习设置已保存。"
+          : "设置已用于本次练习，但浏览器未能保存，关闭后可能丢失。") +
+          (interruptedPractice ? "评分参数已改变，请重新开始练习。" : ""),
       );
       break;
     }
@@ -1580,6 +1900,10 @@ document.addEventListener("click", async (event) => {
       break;
     case "loop":
       loop = !loop;
+      if (!loop) {
+        clearTimeout(loopTimer);
+        loopTimer = 0;
+      }
       el.classList.toggle("selected", loop);
       el.setAttribute("aria-pressed", String(loop));
       break;
@@ -1605,6 +1929,30 @@ document.addEventListener("click", async (event) => {
   }
 });
 let pendingImportTitle = "导入的曲谱";
+$("history-file").addEventListener("change", async () => {
+  const input = $<HTMLInputElement>("history-file");
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 512 * 1024)
+      throw new Error("记录备份应小于 512 KB，请选择 Auralis 导出的记录文件。");
+    const imported = importPracticeHistory(await file.text());
+    // Existing IDs win: importing the same backup cannot duplicate or rewrite history.
+    const existingIds = new Set(practiceHistory.map((record) => record.id));
+    const additions = imported.filter((record) => !existingIds.has(record.id));
+    for (const record of additions)
+      practiceHistory = addPracticeRecord(practiceHistory, record);
+    savePracticeHistory();
+    renderPracticeHistory();
+    $("history-message").textContent =
+      `已合并 ${additions.length} 条新记录，保留最近 100 次。${historySaved ? "" : "请导出备份，当前浏览器未能保存。"}`;
+  } catch (error) {
+    $("history-message").textContent =
+      error instanceof Error ? error.message : "无法导入练习记录。";
+  } finally {
+    input.value = "";
+  }
+});
 $("import-kind").addEventListener("change", () => {
   $("omr-field").hidden = $<HTMLSelectElement>("import-kind").value !== "staff";
 });

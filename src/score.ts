@@ -176,10 +176,15 @@ export function validateScore(value: unknown): PracticeScore {
   const timeSignature = data.timeSignature ?? "4/4";
   if (!/^\d{1,2}\/(?:2|4|8|16)$/.test(timeSignature))
     throw new Error("拍号格式不正确，例如 4/4 或 6/8。");
+  const scoreId =
+    typeof data.id === "string" ? data.id.trim().slice(0, 100).trim() : "";
+  const title =
+    typeof data.title === "string"
+      ? data.title.trim().slice(0, 120).trim()
+      : "";
   return {
-    id: typeof data.id === "string" ? data.id.slice(0, 100) : id(),
-    title:
-      typeof data.title === "string" ? data.title.slice(0, 120) : "导入曲谱",
+    id: scoreId || id(),
+    title: title || "导入曲谱",
     bpm: parsedBpm,
     timeSignature,
     notes,

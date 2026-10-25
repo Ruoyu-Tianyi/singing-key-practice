@@ -13,6 +13,7 @@ import {
   type MicrophoneSettings,
   type PitchFrame,
 } from "./audio";
+import { exportPracticeHistory, type PracticeRecord } from "./practice-history";
 
 const audio = vi.hoisted(() => ({
   startMicrophone: vi.fn(),
@@ -24,6 +25,7 @@ const audio = vi.hoisted(() => ({
   configureMicrophone: vi.fn(),
   setMicrophonePreview: vi.fn(),
   clearMicrophonePreview: vi.fn(),
+  interruptHandler: undefined as ((error: Error) => void) | undefined,
 }));
 
 let scheduledDraw: FrameRequestCallback;
@@ -49,6 +51,9 @@ vi.mock("./audio", async (importOriginal) => {
     ...original,
     AudioEngine: class {
       a4 = 440;
+      set onInterrupted(handler: ((error: Error) => void) | undefined) {
+        audio.interruptHandler = handler;
+      }
       private currentMicrophoneSettings = original.normalizeMicrophoneSettings(
         original.DEFAULT_MICROPHONE_SETTINGS,
       );
@@ -1311,6 +1316,369 @@ describe("practice room integration", () => {
       else Reflect.deleteProperty(document, "hidden");
       element<HTMLDialogElement>("#settings-dialog").close();
       timeline.restore();
+    }
+  });
+});
+
+function savedPracticeHistory(): PracticeRecord[] {
+  return JSON.parse(localStorage.getItem("auralis-practice-history") || "[]");
+}
+
+async function importHistoryFile(contents: string) {
+  const file = new File([contents], "auralis-history.json", {
+    type: "application/json",
+  });
+  Object.defineProperty(file, "text", { value: async () => contents });
+  const input = element<HTMLInputElement>("#history-file");
+  Object.defineProperty(input, "files", { configurable: true, value: [file] });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+  await settle();
+  expect(input.value).toBe("");
+}
+
+describe("completed practice history and recovery", () => {
+  it("records a completed selected phrase once, including rest time and its original settings", async () => {
+    await saveMelody("历史指标回归", "1 0 2");
+    element<HTMLInputElement>("#bpm").value = "60";
+    const transpose = element<HTMLSelectElement>("#transpose");
+    transpose.value = "2";
+    transpose.dispatchEvent(new Event("change", { bubbles: true }));
+    const before = savedPracticeHistory().length;
+    await click("#practice-button");
+    const scheduled = callbacks();
+    scheduled.onTimeline(1000);
+    const onPitch = audio.startMicrophone.mock.lastCall![0] as (
+      frame: PitchFrame,
+    ) => void;
+    for (const [midi, time] of [
+      [62, 1.2],
+      [62, 1.3],
+      [64, 3.2],
+      [64, 3.3],
+    ]) {
+      onPitch({
+        frequency: 440 * 2 ** ((midi - 69) / 12),
+        midi,
+        cents: 0,
+        clarity: 1,
+        rms: 0.02,
+        time,
+      });
+    }
+    scheduled.onComplete();
+    scheduled.onComplete();
+    await vi.advanceTimersByTimeAsync(100);
+    const records = savedPracticeHistory();
+    expect(records).toHaveLength(before + 1);
+    expect(records[0]).toMatchObject({
+      title: "历史指标回归",
+      bpm: 60,
+      transpose: 2,
+      rangeStart: 1,
+      rangeEnd: 3,
+      durationSeconds: 3,
+      pitchAccuracy: 100,
+    });
+    expect(records[0].coverage).toBeGreaterThan(0);
+    expect(records[0].rhythmOffsetMs).not.toBeNull();
+    scheduled.onComplete();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(savedPracticeHistory()).toEqual(records);
+    transpose.value = "0";
+    transpose.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  it("keeps an unvoiced completed practice distinguishable from a scored practice", async () => {
+    await saveMelody("无声记录回归", "1 2");
+    const before = savedPracticeHistory().length;
+    await click("#practice-button");
+    callbacks().onTimeline(1000);
+    callbacks().onComplete();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(savedPracticeHistory()).toHaveLength(before + 1);
+    expect(savedPracticeHistory()[0]).toMatchObject({
+      title: "无声记录回归",
+      pitchAccuracy: null,
+      coverage: 0,
+      rhythmOffsetMs: null,
+    });
+    expect(
+      element("#practice-result").querySelector("strong")?.textContent,
+    ).toBe("—");
+    await click('[data-action="history"]');
+    expect(text("#history-list")).toContain("本次未检测到有效人声");
+  });
+
+  it("does not add history for demonstrations or canceled practices", async () => {
+    await saveMelody("不记入历史回归", "1 2");
+    const before = savedPracticeHistory();
+    await click("#listen-button");
+    callbacks().onComplete();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(savedPracticeHistory()).toEqual(before);
+    await click("#practice-button");
+    const canceled = callbacks();
+    await click("#practice-button");
+    canceled.onComplete();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(savedPracticeHistory()).toEqual(before);
+  });
+
+  it("restores a recorded tempo, transposition and phrase without starting playback or microphone", async () => {
+    await saveMelody("再练片段回归", "1 2 3 4");
+    element<HTMLInputElement>("#bpm").value = "72";
+    element<HTMLInputElement>("#range-start").value = "2";
+    element<HTMLInputElement>("#range-end").value = "3";
+    const transpose = element<HTMLSelectElement>("#transpose");
+    transpose.value = "-3";
+    transpose.dispatchEvent(new Event("change", { bubbles: true }));
+    await click("#practice-button");
+    callbacks().onComplete();
+    await vi.advanceTimersByTimeAsync(100);
+    const record = savedPracticeHistory()[0];
+    pagehide(true);
+    await saveMelody("切换后的其他曲谱", "1 2 3");
+    audio.scheduleNotes.mockClear();
+    audio.startMicrophone.mockClear();
+    await click('[data-action="history"]');
+    await click(`[data-action="retry-history"][data-record-id="${record.id}"]`);
+    expect(text("#score-title")).toBe("再练片段回归");
+    expect(element<HTMLInputElement>("#bpm").value).toBe("72");
+    expect(transpose.value).toBe("-3");
+    expect(element<HTMLInputElement>("#range-start").value).toBe("2");
+    expect(element<HTMLInputElement>("#range-end").value).toBe("3");
+    expect(element<HTMLDialogElement>("#history-dialog").open).toBe(false);
+    expect(document.activeElement).toBe(element("#practice-button"));
+    expect(audio.scheduleNotes).not.toHaveBeenCalled();
+    expect(audio.startMicrophone).not.toHaveBeenCalled();
+    expect(text("#song-feedback")).toContain("准备好后点击开始练习");
+    transpose.value = "0";
+    transpose.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  it("merges a valid backup once and rejects broken backups without partial changes", async () => {
+    const imported: PracticeRecord = {
+      id: "integration-history-backup",
+      title: "<img src=x onerror=alert(1)>",
+      scoreId: "missing-score",
+      completedAt: new Date().toISOString(),
+      bpm: 80,
+      transpose: 0,
+      rangeStart: 1,
+      rangeEnd: 8,
+      durationSeconds: 6,
+      pitchAccuracy: 84,
+      coverage: 75,
+      rhythmOffsetMs: 100,
+    };
+    await click('[data-action="history"]');
+    const before = savedPracticeHistory().length;
+    await importHistoryFile(exportPracticeHistory([imported]));
+    expect(savedPracticeHistory()).toHaveLength(before + 1);
+    expect(
+      savedPracticeHistory().find((record) => record.id === imported.id),
+    ).toEqual(imported);
+    expect(text("#history-message")).toContain("已合并 1 条新记录");
+    expect(element("#history-list").querySelector("img")).toBeNull();
+    expect(
+      element<HTMLButtonElement>(`[data-record-id="${imported.id}"]`).disabled,
+    ).toBe(true);
+    await importHistoryFile(
+      exportPracticeHistory([{ ...imported, title: "不应覆写原记录" }]),
+    );
+    expect(savedPracticeHistory()).toHaveLength(before + 1);
+    expect(
+      savedPracticeHistory().find((record) => record.id === imported.id)?.title,
+    ).toBe(imported.title);
+    expect(text("#history-message")).toContain("已合并 0 条新记录");
+    const unchanged = savedPracticeHistory();
+    await importHistoryFile(
+      JSON.stringify({
+        kind: "auralis-practice-history",
+        version: 1,
+        records: [
+          { ...imported, id: "new-valid-record" },
+          { ...imported, id: "broken", coverage: 200 },
+        ],
+      }),
+    );
+    expect(savedPracticeHistory()).toEqual(unchanged);
+    expect(text("#history-message")).toContain("未导入任何记录");
+  });
+
+  it("reports a storage failure while keeping the finished practice available for backup", async () => {
+    await saveMelody("存储失败记录回归", "1 2");
+    const original = Storage.prototype.setItem;
+    const before = savedPracticeHistory();
+    const storage = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(function (this: Storage, key, value) {
+        if (key === "auralis-practice-history")
+          throw new DOMException("quota", "QuotaExceededError");
+        original.call(this, key, value);
+      });
+    try {
+      await click("#practice-button");
+      callbacks().onComplete();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(savedPracticeHistory()).toEqual(before);
+      expect(text("#toast")).toContain("练习记录暂未保存");
+      await click('[data-action="history"]');
+      expect(element("#history-storage-warning").hidden).toBe(false);
+      expect(text("#history-list")).toContain("存储失败记录回归");
+      expect(
+        element<HTMLButtonElement>('[data-action="export-history"]').disabled,
+      ).toBe(false);
+    } finally {
+      storage.mockRestore();
+      // A valid empty merge retries persistence without replacing in-memory records.
+      await importHistoryFile(exportPracticeHistory([]));
+    }
+  });
+
+  it("does not claim settings were saved when browser storage rejects them", async () => {
+    await click('[data-action="settings"]');
+    const before = localStorage.getItem("shengzhun-settings");
+    const original = Storage.prototype.setItem;
+    const storage = vi
+      .spyOn(Storage.prototype, "setItem")
+      .mockImplementation(function (this: Storage, key, value) {
+        if (key === "shengzhun-settings")
+          throw new DOMException("quota", "QuotaExceededError");
+        original.call(this, key, value);
+      });
+    try {
+      editMicrophoneSettings({
+        ...DEFAULT_MICROPHONE_SETTINGS,
+        inputGain: 1.4,
+      });
+      await click('[data-action="save-settings"]');
+      expect(audio.configureMicrophone).toHaveBeenLastCalledWith({
+        ...DEFAULT_MICROPHONE_SETTINGS,
+        inputGain: 1.4,
+      });
+      expect(localStorage.getItem("shengzhun-settings")).toBe(before);
+      expect(text("#toast")).toContain("浏览器未能保存");
+      expect(text("#toast")).not.toContain("设置已保存");
+    } finally {
+      storage.mockRestore();
+      await restorePracticeSettings();
+    }
+  });
+
+  it("ends active scoring before changed settings take effect and drops its late completion", async () => {
+    await saveMelody("评分参数更改回归", "1 2");
+    const before = savedPracticeHistory();
+    await click("#practice-button");
+    const previous = callbacks();
+    await click('[data-action="settings"]');
+    element<HTMLInputElement>("#tuning").value = "442";
+    await click('[data-action="save-settings"]');
+    expect(text("#practice-button")).toContain("开始练习");
+    expect(text("#toast")).toContain("评分参数已改变");
+    previous.onComplete();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(savedPracticeHistory()).toEqual(before);
+    await restorePracticeSettings();
+  });
+
+  it("ignores rejection from a canceled schedule after a new session has started", async () => {
+    await saveMelody("旧播放异步失败回归", "1 2");
+    let reject!: (error: Error) => void;
+    audio.scheduleNotes.mockReturnValueOnce(
+      new Promise<void>((_resolve, fail) => {
+        reject = fail;
+      }),
+    );
+    await click("#listen-button");
+    const previous = callbacks();
+    await click("#listen-button");
+    await click("#listen-button");
+    const stops = audio.stopPlayback.mock.calls.length;
+    reject(new Error("过时的播放错误"));
+    await settle();
+    previous.onComplete();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(audio.stopPlayback).toHaveBeenCalledTimes(stops);
+    expect(text("#listen-button")).toContain("停止示范");
+    expect(element<HTMLSelectElement>("#score-select").disabled).toBe(true);
+    expect(text("#toast")).not.toContain("过时的播放错误");
+  });
+
+  it("cleans up an interrupted audio session and lets the user restart it", async () => {
+    await saveMelody("音频中断恢复回归", "1 2");
+    const before = savedPracticeHistory();
+    await click("#practice-button");
+    const previous = callbacks();
+    expect(audio.interruptHandler).toBeTypeOf("function");
+    audio.interruptHandler!(new Error("麦克风连接已中断，请重新开启。"));
+    expect(text("#input-state")).toBe("未连接");
+    expect(text("#mic-button")).toContain("开启麦克风");
+    expect(text("#practice-button")).toContain("开始练习");
+    expect(text("#song-feedback")).toContain("本次未完成的练习不会计入记录");
+    expect(text("#toast")).toContain("麦克风连接已中断");
+    previous.onComplete();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(savedPracticeHistory()).toEqual(before);
+    await click("#practice-button");
+    expect(audio.startMicrophone).toHaveBeenCalledTimes(2);
+    expect(audio.scheduleNotes).toHaveBeenCalledTimes(2);
+    expect(text("#practice-button")).toContain("停止练习");
+    expect(text("#input-state")).toBe("已连接");
+  });
+
+  it("cancels the pending loop when the microphone is stopped between practices", async () => {
+    await saveMelody("循环间隔停止收音回归", "1 2");
+    try {
+      if (element("#loop-button").getAttribute("aria-pressed") !== "true")
+        await click("#loop-button");
+      await click("#practice-button");
+      callbacks().onComplete();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(element("#practice-result").hidden).toBe(false);
+      expect(text("#practice-button")).toContain("开始练习");
+      expect(text("#input-state")).toBe("已连接");
+      await vi.advanceTimersByTimeAsync(400);
+      await click("#mic-button");
+      expect(text("#input-state")).toBe("未连接");
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(audio.startMicrophone).toHaveBeenCalledOnce();
+      expect(audio.scheduleNotes).toHaveBeenCalledOnce();
+      expect(text("#practice-button")).toContain("开始练习");
+      expect(text("#input-state")).toBe("未连接");
+    } finally {
+      if (element("#loop-button").getAttribute("aria-pressed") === "true")
+        await click("#loop-button");
+    }
+  });
+
+  it("does not revive a canceled loop timer when looping is enabled again during the gap", async () => {
+    await saveMelody("循环开关等待回归", "1 2");
+    try {
+      if (element("#loop-button").getAttribute("aria-pressed") !== "true")
+        await click("#loop-button");
+      await click("#practice-button");
+      callbacks().onComplete();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(element("#practice-result").hidden).toBe(false);
+      await vi.advanceTimersByTimeAsync(200);
+      await click("#loop-button");
+      expect(element("#loop-button").getAttribute("aria-pressed")).toBe(
+        "false",
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      await click("#loop-button");
+      expect(element("#loop-button").getAttribute("aria-pressed")).toBe("true");
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(audio.scheduleNotes).toHaveBeenCalledOnce();
+      expect(text("#practice-button")).toContain("开始练习");
+      // Enabling looping still applies normally to a user-started next session.
+      await click("#practice-button");
+      expect(audio.scheduleNotes).toHaveBeenCalledTimes(2);
+      expect(text("#practice-button")).toContain("停止练习");
+    } finally {
+      if (element("#loop-button").getAttribute("aria-pressed") === "true")
+        await click("#loop-button");
     }
   });
 });
